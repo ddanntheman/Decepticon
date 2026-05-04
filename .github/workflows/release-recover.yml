@@ -67,5 +67,6 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           VERSION: ${{ inputs.version }}
         run: gh release edit "v${VERSION}" --draft=false --prerelease=false
