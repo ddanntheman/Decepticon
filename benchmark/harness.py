@@ -38,6 +38,32 @@ class AgentResponse:
     token_count: int | None = None
 
 
+@dataclass
+class _ActiveRun:
+    """Per-call handle to the LangGraph thread + run currently in flight.
+
+    Lives on the local stack of ``run_challenge`` so that concurrent
+    ``run_challenge`` invocations (parallel mode) cannot clobber each other's
+    IDs through shared instance state on ``Harness``. Previously these IDs
+    were stored as ``self._active_thread_id`` / ``self._active_run_id`` and
+    a parallel batch would mix them across challenges — the cancel path then
+    issued ``cancel(thread_A, run_B)`` which 404s and triggered the
+    escalation chain that killed the whole batch.
+
+    ``thread_id`` and ``run_id`` start as ``None`` and are populated by
+    ``_invoke_agent`` once the LangGraph thread + run exist. Cancel helpers
+    treat ``has_run == False`` as "nothing to cancel" and short-circuit.
+    """
+
+    langgraph_url: str
+    thread_id: str | None = None
+    run_id: str | None = None
+
+    @property
+    def has_run(self) -> bool:
+        return self.thread_id is not None and self.run_id is not None
+
+
 def _sum_token_usage(messages: object) -> int | None:
     """Sum ``usage_metadata.total_tokens`` across AI messages.
 
@@ -78,8 +104,8 @@ class Harness:
         self.provider = provider
         self.config = config
 
-    async def _cancel_active_runs(self) -> None:
-        """Fire-and-forget cancel of the current in-flight LangGraph run.
+    async def _cancel_active_runs(self, active: _ActiveRun) -> None:
+        """Fire-and-forget cancel of the in-flight LangGraph run for ``active``.
 
         Uses ``action="rollback"`` (stronger than ``"interrupt"``, doesn't
         require the graph node to honor CancelledError — interrupts the run
@@ -91,30 +117,33 @@ class Harness:
         call cannot hang indefinitely — if the API layer can't acknowledge
         in 5s, treat as failed and let the caller escalate.
         """
-        thread_id = getattr(self, "_active_thread_id", None)
-        run_id = getattr(self, "_active_run_id", None)
-        if not thread_id or not run_id:
+        if not active.has_run:
             return
         try:
-            client = get_client(url=self.config.langgraph_url)
+            client = get_client(url=active.langgraph_url)
             await asyncio.wait_for(
-                client.runs.cancel(thread_id, run_id, wait=False, action="rollback"),
+                client.runs.cancel(active.thread_id, active.run_id, wait=False, action="rollback"),
                 timeout=5.0,
             )
-            log.info("Cancelled run %s on thread %s", run_id, thread_id)
+            log.info("Cancelled run %s on thread %s", active.run_id, active.thread_id)
         except asyncio.TimeoutError:
             log.warning(
                 "Run cancellation timed out after 5s (thread %s run %s)",
-                thread_id,
-                run_id,
+                active.thread_id,
+                active.run_id,
             )
         except Exception as exc:
-            log.warning("Run cancellation failed (thread %s run %s): %s", thread_id, run_id, exc)
+            log.warning(
+                "Run cancellation failed (thread %s run %s): %s",
+                active.thread_id,
+                active.run_id,
+                exc,
+            )
 
     async def _cancel_and_verify_terminal(
-        self, *, deadline_seconds: int = 30
+        self, active: _ActiveRun, *, deadline_seconds: int = 30
     ) -> tuple[CancelOutcome, str | None]:
-        """Cancel the active run AND verify it reached terminal status.
+        """Cancel ``active``'s run AND verify it reached terminal status.
 
         Returns ``(outcome, terminal_status)``. Outcome is recorded on the
         ChallengeResult so observers/critics can detect cancel/teardown
@@ -131,26 +160,26 @@ class Harness:
                ``_force_restart_langgraph`` and return
                ("container_restart", last_status).
         """
-        thread_id = getattr(self, "_active_thread_id", None)
-        run_id = getattr(self, "_active_run_id", None)
-        if not thread_id or not run_id:
+        if not active.has_run:
             return ("clean", None)
 
-        await self._cancel_active_runs()
+        await self._cancel_active_runs(active)
 
-        client = get_client(url=self.config.langgraph_url)
+        client = get_client(url=active.langgraph_url)
         terminal = {"success", "error", "interrupted", "cancelled", "timeout"}
         deadline = time.time() + deadline_seconds
         last_status: str | None = None
 
         while time.time() < deadline:
             try:
-                run_status = await asyncio.wait_for(client.runs.get(thread_id, run_id), timeout=5.0)
+                run_status = await asyncio.wait_for(
+                    client.runs.get(active.thread_id, active.run_id), timeout=5.0
+                )
                 last_status = run_status.get("status") if isinstance(run_status, dict) else None
                 if last_status in terminal:
                     log.info(
                         "Run %s reached terminal status %s after cancel",
-                        run_id,
+                        active.run_id,
                         last_status,
                     )
                     return ("rollback", last_status)
@@ -167,14 +196,14 @@ class Harness:
         log.warning(
             "harness.escalation: run %s did NOT reach terminal status within %ds "
             "(last=%s) — escalating to langgraph container restart",
-            run_id,
+            active.run_id,
             deadline_seconds,
             last_status,
         )
-        self._force_restart_langgraph()
+        self._force_restart_langgraph(active)
         return ("container_restart", last_status)
 
-    def _force_restart_langgraph(self) -> None:
+    def _force_restart_langgraph(self, active: _ActiveRun) -> None:
         """Restart the langgraph container to dislodge a wedged run.
 
         When API-level cancel cannot reach the wedged graph node (cycle-6
@@ -183,8 +212,8 @@ class Harness:
         cleanup — restarting just langgraph leaves the sandbox tmux state
         poisoned for the next challenge if the wedge involved tmux.
 
-        Resets ``_active_thread_id`` and ``_active_run_id`` after restart so
-        the next challenge starts with a clean slate.
+        Clears ``active.thread_id`` / ``active.run_id`` after restart so the
+        caller can't accidentally re-cancel a run that no longer exists.
         """
         log.warning("harness.escalation: restarting langgraph container")
         subprocess.run(
@@ -236,10 +265,10 @@ class Harness:
         )
 
         # Stale IDs are pinned to a langgraph instance that no longer
-        # contains them — clear so the next challenge can't accidentally
-        # cancel something it doesn't own.
-        self._active_thread_id = None
-        self._active_run_id = None
+        # contains them — clear so the caller can't accidentally cancel
+        # something it doesn't own.
+        active.thread_id = None
+        active.run_id = None
 
     def _ensure_services_healthy(self) -> None:
         """Check LangGraph and LiteLLM are reachable with models loaded."""
@@ -357,6 +386,11 @@ class Harness:
             shutil.rmtree(workspace, ignore_errors=True)
         (workspace / "plan").mkdir(parents=True, exist_ok=True)
 
+        # Per-call active-run handle. Living on this stack frame guarantees
+        # isolation from sibling run_challenge() invocations in parallel mode
+        # — see _ActiveRun docstring for the bug this fixes.
+        active = _ActiveRun(langgraph_url=self.config.langgraph_url)
+
         start = time.time()
         try:
             setup_result = self.provider.setup(challenge)
@@ -375,7 +409,7 @@ class Harness:
             # Agent creates its own OPPLAN based on challenge info
             extra_ports = setup_result.extra_ports
             agent_resp = await asyncio.wait_for(
-                self._invoke_agent(challenge, setup_result.target_url, extra_ports),
+                self._invoke_agent(challenge, setup_result.target_url, extra_ports, active=active),
                 timeout=self.config.timeout,
             )
 
@@ -424,7 +458,7 @@ class Harness:
             # cancel_outcome="failed" tells the next critic loop the cancel
             # didn't dislodge the run, and the next pre-cycle sandbox restart
             # is the resolution path.
-            cancel_outcome, terminal_status = await self._cancel_and_verify_terminal()
+            cancel_outcome, terminal_status = await self._cancel_and_verify_terminal(active)
             # Agent timed out, but may have written flags to workspace
             workspace_text = self._scan_workspace_for_output(workspace)
             if workspace_text and "FLAG{" in workspace_text:
@@ -461,7 +495,7 @@ class Harness:
             # Unexpected exception path — same discipline: cancel + verify
             # terminal before teardown so we don't tear the target out from
             # under a still-running graph node.
-            cancel_outcome, terminal_status = await self._cancel_and_verify_terminal()
+            cancel_outcome, terminal_status = await self._cancel_and_verify_terminal(active)
             self.provider.teardown(challenge)
             return ChallengeResult(
                 challenge_id=challenge.id,
@@ -486,6 +520,8 @@ class Harness:
         challenge: Challenge,
         target_url: str,
         extra_ports: dict[int, int] | None = None,
+        *,
+        active: _ActiveRun,
     ) -> AgentResponse:
         """Invoke the decepticon main agent to execute one benchmark run.
 
@@ -548,9 +584,10 @@ class Harness:
         }
 
         thread_id = str(uuid.uuid4())
-        # Expose to run_challenge so it can issue a cancel on timeout.
-        self._active_thread_id = thread_id
-        self._active_run_id = None
+        # Publish to the per-call active handle so run_challenge can issue a
+        # cancel on timeout and so the finally-block can clean up an orphan.
+        active.thread_id = thread_id
+        active.run_id = None
 
         # Tracks whether the polling loop observed a terminal status. If
         # _invoke_agent exits via any early-return path (httpx.ConnectError,
@@ -580,7 +617,7 @@ class Harness:
                     langsmith_tracing={"project_name": os.getenv("LANGSMITH_PROJECT", "Benchmark")},
                 )
                 run_id = run["run_id"]
-                self._active_run_id = run_id
+                active.run_id = run_id
             except httpx.ConnectError:
                 log.warning("Cannot reach LangGraph at %s", self.config.langgraph_url)
                 # Run never created — no orphan to cancel; mark as observed
@@ -673,9 +710,9 @@ class Harness:
             # via raised exception, outer cancellation, or polling-exception
             # early return — the run is still alive on langgraph's side.
             # Cancel + verify so it doesn't orphan into the next challenge.
-            if not terminal_observed and self._active_run_id is not None:
+            if not terminal_observed and active.run_id is not None:
                 try:
-                    await self._cancel_and_verify_terminal()
+                    await self._cancel_and_verify_terminal(active)
                 except Exception as exc:
                     log.warning("harness.escalation: orphan-run cancel failed: %s", exc)
 

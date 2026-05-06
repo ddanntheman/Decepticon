@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from benchmark.config import BenchmarkConfig
-from benchmark.harness import AgentResponse, Harness
+from benchmark.harness import AgentResponse, Harness, _ActiveRun
 from benchmark.schemas import Challenge, SetupResult
 
 pytestmark = pytest.mark.slow
@@ -294,6 +294,7 @@ class TestHarness:
                 challenge,
                 target_url="http://host.docker.internal:33042",
                 extra_ports={22: 2222},
+                active=_ActiveRun(langgraph_url="http://localhost:2024"),
             )
 
         payload = captured["payload"]
