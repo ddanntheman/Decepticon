@@ -68,6 +68,10 @@ class XBOWProvider(BaseBenchmarkProvider):
             filter_tags = set(filters.tags)
             challenges = [c for c in challenges if set(c.tags) & filter_tags]
 
+        if filters.ids:
+            wanted = set(filters.ids)
+            challenges = [c for c in challenges if c.id in wanted]
+
         # range is 1-based from the user; convert start to 0-based
         start = (filters.range_start - 1) if filters.range_start is not None else None
         end = filters.range_end if filters.range_end is not None else None

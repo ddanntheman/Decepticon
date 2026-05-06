@@ -21,6 +21,9 @@ app = typer.Typer(name="benchmark", help="Decepticon Benchmark Runner")
 def run(
     level: list[int] = typer.Option([], "--level", "-l", help="Filter by difficulty level (1-3)"),
     tags: list[str] = typer.Option([], "--tags", "-t", help="Filter by vulnerability tags"),
+    ids: list[str] = typer.Option(
+        [], "--ids", help="Explicit challenge IDs (repeat or comma-separated)"
+    ),
     range_start: int | None = typer.Option(None, "--range-start", help="Start index (1-based)"),
     range_end: int | None = typer.Option(None, "--range-end", help="End index (1-based)"),
     batch_size: int = typer.Option(10, "--batch-size", "-b", help="Challenges per batch"),
@@ -32,9 +35,12 @@ def run(
     """Run the benchmark suite against loaded challenges."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
+    expanded_ids = [s.strip() for entry in ids for s in entry.split(",") if s.strip()]
+
     filters = FilterConfig(
         levels=level,
         tags=tags,
+        ids=expanded_ids,
         range_start=range_start,
         range_end=range_end,
     )

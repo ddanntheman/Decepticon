@@ -96,5 +96,6 @@ class FilterConfig(BaseModel):
 
     levels: list[int] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    ids: list[str] = Field(default_factory=list)
     range_start: int | None = None
     range_end: int | None = None
