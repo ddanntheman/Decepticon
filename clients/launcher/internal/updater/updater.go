@@ -25,6 +25,11 @@ const (
 	RawBaseURL = "https://raw.githubusercontent.com/" + Repo
 )
 
+// executableFn is a var so tests can redirect binary writes to a temp dir
+// instead of overwriting the test binary itself. Matches the isWSLFn /
+// wslHostIPFn pattern used in cmd/start.go.
+var executableFn = os.Executable
+
 // Release represents a GitHub release.
 type Release struct {
 	TagName string  `json:"tag_name"`
@@ -347,11 +352,6 @@ func PromptIfUpdateAvailable(currentVersion string) (bool, error) {
 	// child, so this is also unreachable on Windows. Kept for symmetry.
 	return true, nil
 }
-
-// executableFn is a var so tests can redirect binary writes to a temp dir
-// instead of overwriting the test binary itself. Matches the isWSLFn /
-// wslHostIPFn pattern used in cmd/start.go.
-var executableFn = os.Executable
 
 // isInteractiveStdin returns true when the launcher's stdin is connected
 // to a real terminal. Piped / redirected stdin (CI, log shippers,

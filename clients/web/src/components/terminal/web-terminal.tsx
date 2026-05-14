@@ -71,6 +71,9 @@ export function WebTerminal({
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
     retryListenerRef.current?.dispose();
+    retryListenerRef.current = null;
+    onDataDisposableRef.current?.dispose();
+    onDataDisposableRef.current = null;
     resizeObserverRef.current?.disconnect();
     wsRef.current?.close();
     termRef.current?.dispose();
