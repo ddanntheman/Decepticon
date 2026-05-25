@@ -425,6 +425,27 @@ services:
     profiles:
       - c2-sliver
 
+  # ─── Optional: OpenTelemetry collector for self-hosted traces ──────────
+  # Uncomment to receive Decepticon spans locally (Jaeger all-in-one).
+  # Decepticon stays default-off; set OTEL_ENABLED=1 plus the env vars below
+  # in the langgraph service to actually emit spans.
+  #
+  # jaeger:
+  #   image: jaegertracing/all-in-one:1.60
+  #   container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-jaeger
+  #   environment:
+  #     - COLLECTOR_OTLP_ENABLED=true
+  #   ports:
+  #     - "127.0.0.1:${JAEGER_UI_PORT:-16686}:16686"
+  #     - "127.0.0.1:${OTEL_HTTP_PORT:-4318}:4318"
+  #   networks:
+  #     - decepticon-net
+  #
+  # To export Decepticon spans to this service, set on the langgraph service:
+  #   - OTEL_ENABLED=1
+  #   - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+  #   - OTEL_SERVICE_NAME=decepticon
+
 volumes:
   postgres_data:
   sliver_data:

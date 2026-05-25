@@ -74,7 +74,12 @@ dependencies = [
 # driver is imported lazily (decepticon/tools/research/neo4j_store.py), so
 # the base install imports and runs everything except the KG graph tools.
 neo4j = ["neo4j>=5.0"]
-all = ["decepticon[neo4j]"]
+telemetry = [
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp>=1.27",
+]
+all = ["decepticon[neo4j,telemetry]"]
 
 [project.scripts]
 decepticon-kg-health = "decepticon.tools.research.health:main"
