@@ -223,9 +223,17 @@ Per-challenge, the provider does the following — no operator intervention:
   `install_attacker.yml`, and waiting for `wait_for_connection`. The
   provider's 7200-second cap on `setup` reflects this; tune
   `_SETUP_TIMEOUT_SECONDS` if your tenant is slow.
-- **No CI coverage.** GitHub Actions runners do not have an OpenStack
-  tenant. The MHBench provider is excluded from `make test` and `make
-  quality`.
+- **No end-to-end CI coverage.** GitHub Actions runners do not have an
+  OpenStack tenant, so the live attack path (`main.py setup` → flag
+  seeding → agent run → flag capture → `teardown`) is not exercised on
+  every PR. The provider's pure / file-IO surface (topology registry,
+  config parsing, flag-target selection, external-mode artefact
+  staging, evaluator) **is** covered by unit tests in
+  `packages/decepticon/tests/unit/benchmark/test_mhbench_provider.py`
+  and runs inside `make test-local` and `make quality`. The subprocess
+  layers (OpenStack discovery, `ansible-playbook addFlag.yml`,
+  `main.py setup`/`teardown`) still require an operator with a live
+  tenant.
 - **Sequential only against a single tenant.** Each MHBench environment
   owns project quotas during setup; running `--parallel >1` against the
   same tenant will collide. Run sequentially or use separate tenants
