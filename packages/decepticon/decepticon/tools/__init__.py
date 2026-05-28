@@ -8,6 +8,7 @@ from decepticon.tools.bash import (
 )
 from decepticon.tools.cloud.tools import CLOUD_TOOLS
 from decepticon.tools.contracts.tools import CONTRACT_TOOLS
+from decepticon.tools.defense import DEFENSE_TOOLS
 from decepticon.tools.references.tools import REFERENCES_TOOLS
 from decepticon.tools.reporting.tools import REPORTING_TOOLS
 from decepticon.tools.research.patch import PATCH_TOOLS
@@ -25,6 +26,7 @@ __all__ = [
     "AD_TOOLS",
     "CLOUD_TOOLS",
     "CONTRACT_TOOLS",
+    "DEFENSE_TOOLS",
     "PATCH_TOOLS",
     "REFERENCES_TOOLS",
     "REPORTING_TOOLS",
