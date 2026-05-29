@@ -401,9 +401,7 @@ def _oauth_env_credentials_present(method: AuthMethod) -> bool:
     a method must not be dropped from the fallback chain just because no file
     exists on disk.
     """
-    return any(
-        os.getenv(env_var, "").strip() for env_var in _OAUTH_ENV_CREDENTIALS.get(method, ())
-    )
+    return any(os.getenv(env_var, "").strip() for env_var in _OAUTH_ENV_CREDENTIALS.get(method, ()))
 
 
 def _is_truthy(value: str) -> bool:

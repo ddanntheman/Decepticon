@@ -344,8 +344,7 @@ class ReplayRunner:
             SubAgentTaskSpec(
                 agent_name="decepticon",
                 prompt=(
-                    f"CART replay: re-execute objective {oid} "
-                    f"after change {event.resource_id}"
+                    f"CART replay: re-execute objective {oid} after change {event.resource_id}"
                 ),
                 objective_ids=(oid,),
                 technique_tags=technique_tags,
@@ -361,8 +360,7 @@ class ReplayRunner:
                 SubAgentTaskSpec(
                     agent_name="decepticon",
                     prompt=(
-                        "CART replay: re-execute recorded chain "
-                        f"after change {event.resource_id}"
+                        f"CART replay: re-execute recorded chain after change {event.resource_id}"
                     ),
                     objective_ids=(),
                     technique_tags=technique_tags,
@@ -375,9 +373,7 @@ class ReplayRunner:
                 "ReplayRunner.execute live mode requires a dispatcher; "
                 "pass dispatcher= to __init__ or use make_replay_dispatcher(...)"
             )
-        log.info(
-            "live replay: plan=%s dispatching %d spec(s)", plan.plan_id, len(specs)
-        )
+        log.info("live replay: plan=%s dispatching %d spec(s)", plan.plan_id, len(specs))
         results = [self._dispatcher(spec) for spec in specs]
         return {
             "status": "completed",

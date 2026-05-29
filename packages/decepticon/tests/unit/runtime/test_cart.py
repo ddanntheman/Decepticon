@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import pytest
+
 from decepticon.runtime import cart, recording
 from decepticon.runtime.cart import (
     ChangeEvent,
@@ -207,9 +208,7 @@ class _FakeDispatcher:
 
 def test_replay_runner_execute_live_dispatches_one_spec_per_objective():
     fake = _FakeDispatcher()
-    runner, base = _build_runner(
-        record_path="/tmp/rec.jsonl", dry_run=False, dispatcher=fake
-    )
+    runner, base = _build_runner(record_path="/tmp/rec.jsonl", dry_run=False, dispatcher=fake)
     event = ChangeEvent(
         source="cloudtrail",
         event_type="x",

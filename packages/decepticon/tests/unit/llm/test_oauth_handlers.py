@@ -127,7 +127,9 @@ class TestCodexRefreshNoSecretLeak:
 # ── B10 / B11: streaming must preserve tool calls + finish_reason ───────
 
 
-@pytest.mark.parametrize("handler", [copilot.copilot_handler_instance, grok.grok_sub_handler_instance])
+@pytest.mark.parametrize(
+    "handler", [copilot.copilot_handler_instance, grok.grok_sub_handler_instance]
+)
 class TestStreamingToolCalls:
     def test_tool_calls_are_emitted_not_dropped(self, handler) -> None:
         resp = _response(

@@ -256,9 +256,7 @@ class EventLogMiddleware(AgentMiddleware):
             # a failed validate_finding (status='error') never births a phantom
             # finding.created. Order stays tool.call -> tool.result -> finding.
             if status not in {"error"} and _is_finding_tool(tool_name):
-                self._safe_append(
-                    event_log, EventType.FINDING_CREATED, {"tool": tool_name}, agent
-                )
+                self._safe_append(event_log, EventType.FINDING_CREATED, {"tool": tool_name}, agent)
         else:
             # A Command (graph control-flow) carries no tool output to size, and
             # is not a tool *result*, so it never emits a finding.

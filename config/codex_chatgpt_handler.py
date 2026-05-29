@@ -150,8 +150,7 @@ def _refresh_tokens(auth: dict[str, Any]) -> dict[str, Any]:
         # expected but absent / empty.
         missing = [name for name in ("access_token", "id_token") if not data.get(name)]
         raise litellm.AuthenticationError(
-            message="Codex ChatGPT refresh response missing fields: "
-            + ", ".join(missing),
+            message="Codex ChatGPT refresh response missing fields: " + ", ".join(missing),
             model="auth",
             llm_provider="auth",
         )

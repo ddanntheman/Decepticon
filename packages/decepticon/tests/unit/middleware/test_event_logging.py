@@ -14,7 +14,6 @@ from decepticon.middleware.event_logging import (
 )
 from decepticon.runtime.event_log import EventType, read_events
 
-
 # ── fakes mirroring the request/handler shapes used by other middleware tests ──
 
 

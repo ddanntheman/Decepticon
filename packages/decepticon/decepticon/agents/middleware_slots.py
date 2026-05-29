@@ -44,16 +44,16 @@ from decepticon.middleware import (
     SkillsMiddleware,
     UntrustedOutputMiddleware,
 )
-from decepticon.middleware.model_override import ModelOverrideMiddleware
-from decepticon.middleware.notifications import SandboxNotificationMiddleware
-from decepticon.middleware.roe import build_default_sink
 from decepticon.middleware.budget import BudgetEnforcementMiddleware
 from decepticon.middleware.event_logging import EventLogMiddleware
 from decepticon.middleware.hitl import (
     DEFAULT_HIGH_IMPACT_POLICY,
     HITLApprovalMiddleware,
 )
+from decepticon.middleware.model_override import ModelOverrideMiddleware
+from decepticon.middleware.notifications import SandboxNotificationMiddleware
 from decepticon.middleware.prompt_injection_shield import PromptInjectionShieldMiddleware
+from decepticon.middleware.roe import build_default_sink
 
 # Slot enum + per-role applicability mapping + safety-critical set
 # all live in the contract layer now (decepticon_core.contracts.slots).

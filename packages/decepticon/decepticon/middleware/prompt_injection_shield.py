@@ -364,9 +364,7 @@ class PromptInjectionShieldMiddleware(AgentMiddleware):
     # the last-known skill-loader names). Default-runtime behavior is unchanged —
     # ``_is_trusted_internal_tool`` resolves the skill-loader names from the live
     # registry and only relies on this union when no registry can be imported.
-    _SAFE_TOOL_NAMES: ClassVar[frozenset[str]] = (
-        _FRAMEWORK_TOOL_NAMES | _FALLBACK_SKILL_TOOL_NAMES
-    )
+    _SAFE_TOOL_NAMES: ClassVar[frozenset[str]] = _FRAMEWORK_TOOL_NAMES | _FALLBACK_SKILL_TOOL_NAMES
 
     def __init__(self, *, append_policy_to_system: bool = True) -> None:
         super().__init__()
