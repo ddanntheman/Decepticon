@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from functools import lru_cache
+from importlib.resources import as_file, files
 from typing import Any
 
 from langchain_core.tools import tool
+
+from decepticon.tools.skills_registry import (
+    AmbiguousSkill,
+    SkillRecord,
+    build_registry_from_package,
+    resolve_skill,
+)
 
 # ── load_skill tool ──────────────────────────────────────────────────────────
 # A Decepticon-specific replacement for `load_skill("/skills/...")` that
@@ -12,6 +22,21 @@ from langchain_core.tools import tool
 # base-directory header and an index of references/* in the same directory.
 
 _SKILL_PATH_PREFIX = "/skills/"
+
+
+@lru_cache(maxsize=1)
+def _default_skill_registry() -> tuple[SkillRecord, ...]:
+    """Return the packaged OSS skill registry.
+
+    ``importlib.resources.as_file`` keeps this compatible with both editable
+    installs and wheel layouts where package data may not be a plain directory.
+    """
+    try:
+        root = files("decepticon").joinpath("skills")
+        with as_file(root) as skills_root:
+            return tuple(build_registry_from_package(skills_root))
+    except (FileNotFoundError, ModuleNotFoundError, OSError):
+        return ()
 
 
 def _strip_frontmatter(text: str) -> tuple[str, dict[str, str]]:
@@ -119,6 +144,56 @@ def _validate_skill_path(skill_path: Any, sources: list[str]) -> str | None:
     return None
 
 
+def _short_path_candidates(query: str) -> list[str]:
+    """Expand relative skill paths into canonical ``/skills/...`` candidates."""
+    q = query.strip().lstrip("/")
+    if not q or q.startswith("skills/") or "/" not in q:
+        return []
+    prefixed = f"{_SKILL_PATH_PREFIX}{q}"
+    candidates = [prefixed]
+    if not prefixed.endswith(".md"):
+        candidates.append(prefixed.rstrip("/") + "/SKILL.md")
+    return candidates
+
+
+def _format_ambiguous_skill(result: AmbiguousSkill) -> str:
+    lines = [
+        f"[load_skill error] Ambiguous skill query {result.query!r}. Use one of these exact paths:"
+    ]
+    lines.extend(f"- {candidate.id}" for candidate in result.candidates)
+    return "\n".join(lines)
+
+
+def _resolve_skill_path(
+    skill_path: Any,
+    sources: list[str],
+    registry: Iterable[SkillRecord],
+) -> tuple[str | None, str | None]:
+    """Resolve exact paths, relative paths, or slugs to a safe skill path."""
+    if not isinstance(skill_path, str) or not skill_path.strip():
+        return None, "[load_skill error] skill_path must be a non-empty string."
+    query = skill_path.strip()
+
+    if query.startswith(_SKILL_PATH_PREFIX):
+        path_error = _validate_skill_path(query, sources)
+        return (None, path_error) if path_error is not None else (query, None)
+
+    if "\\" in query or ".." in query.split("/"):
+        return None, f"[load_skill error] Unsafe skill query rejected: {query!r}"
+
+    for candidate in _short_path_candidates(query):
+        path_error = _validate_skill_path(candidate, sources)
+        if path_error is None:
+            return candidate, None
+
+    resolved = resolve_skill(query, registry, allowed_sources=sources)
+    if isinstance(resolved, SkillRecord):
+        return resolved.id, None
+    if isinstance(resolved, AmbiguousSkill):
+        return None, _format_ambiguous_skill(resolved)
+    return None, f"[load_skill error] Skill not found for query: {query!r}"
+
+
 def _format_skill_body(skill_path: str, raw: str) -> tuple[list[str], str, str]:
     """Build the header + body sections for a loaded skill file.
 
@@ -142,7 +217,12 @@ def _format_skill_body(skill_path: str, raw: str) -> tuple[list[str], str, str]:
     return sections, base_dir, path_parts[-1]
 
 
-def build_load_skill_tool(backend: Any, sources: list[str]):  # type: ignore[no-untyped-def]
+def build_load_skill_tool(
+    backend: Any,
+    sources: list[str],
+    *,
+    registry: Iterable[SkillRecord] | None = None,
+):  # type: ignore[no-untyped-def]
     """Construct the ``load_skill`` LangChain tool.
 
     Returns a closure-bound ``@tool``-decorated function that reads a skill
@@ -156,19 +236,23 @@ def build_load_skill_tool(backend: Any, sources: list[str]):  # type: ignore[no-
     langgraph container. No manual unwrapping needed.
     """
 
+    skill_registry = tuple(registry) if registry is not None else _default_skill_registry()
+
     @tool
     def load_skill(skill_path: str, include_siblings: bool = False) -> str:
         """Load a Decepticon skill file (full body, no line-limit truncation).
 
-        Use this for ANY ``/skills/*.md`` file instead of ``read_file``. It
-        returns the entire skill body (frontmatter stripped) prepended with a
-        base directory header, followed by an index of any ``references/`` files
-        in the same directory so you know what additional templates / cheat
-        sheets exist for this skill.
+        Use this for skill markdown instead of ``read_file``. ``skill_path`` may
+        be an exact ``/skills/.../*.md`` path, a relative path under ``/skills/``,
+        or a unique skill slug such as ``sql-injection``. The tool returns the
+        entire skill body (frontmatter stripped) prepended with a base directory
+        header, followed by an index of any ``references/`` files in the same
+        directory so you know what additional templates / cheat sheets exist.
 
         Args:
-            skill_path: Absolute path under ``/skills/``, e.g.
-                ``/skills/standard/exploit/web/crypto/SKILL.md``.
+            skill_path: Skill path or slug, e.g.
+                ``/skills/standard/exploit/web/crypto/SKILL.md``,
+                ``standard/exploit/web/crypto/SKILL.md``, or ``crypto``.
             include_siblings: If True, also list sibling ``.md`` files in the
                 same directory (useful when the skill is a category index).
                 Default False to avoid duplicating the catalog already in the
@@ -178,15 +262,15 @@ def build_load_skill_tool(backend: Any, sources: list[str]):  # type: ignore[no-
             The skill body with a header + references index. Errors are
             returned as ``[load_skill error] ...`` strings (never raised).
         """
-        path_error = _validate_skill_path(skill_path, sources)
-        if path_error is not None:
-            return path_error
+        resolved_path, path_error = _resolve_skill_path(skill_path, sources, skill_registry)
+        if resolved_path is None:
+            return path_error or "[load_skill error] Skill could not be resolved."
 
-        raw, err = _read_via_backend(backend, skill_path)
+        raw, err = _read_via_backend(backend, resolved_path)
         if raw is None:
-            return f"[load_skill error] Skill not found: {skill_path} ({err})"
+            return f"[load_skill error] Skill not found: {resolved_path} ({err})"
 
-        sections, base_dir, basename = _format_skill_body(skill_path, raw)
+        sections, base_dir, basename = _format_skill_body(resolved_path, raw)
 
         refs_dir = base_dir.rstrip("/") + "/references"
         refs = _list_dir_via_backend(backend, refs_dir)

@@ -11,10 +11,18 @@ Skills use **progressive disclosure** across three loading stages:
 | Stage | What loads | Token cost | When |
 |-------|-----------|-----------|------|
 | 1 | YAML frontmatter (`name` + `description` only) | ~50–100 | Agent boot — injected into system prompt for all relevant skills |
-| 2 | Full `SKILL.md` body | ~500–2,000 | Agent calls `read_file()` after deciding the skill is relevant |
+| 2 | Full `SKILL.md` body | ~500–2,000 | Agent calls `load_skill()` after deciding the skill is relevant |
 | 3 | `references/` documents | variable | Agent reads supplementary references when the skill body instructs it to |
 
-The agent sees only frontmatter initially. When a task matches a skill's description, the agent reads the full file. This keeps context windows lean while making deep knowledge available when needed.
+The agent sees only frontmatter initially. When a task matches a skill's description, the agent loads the full file. This keeps context windows lean while making deep knowledge available when needed.
+
+`load_skill()` is the only supported reader for skill markdown. It accepts:
+
+- exact virtual paths such as `/skills/standard/recon/passive-recon/SKILL.md`
+- relative paths such as `standard/recon/passive-recon/SKILL.md`
+- unique slugs such as `passive-recon`
+
+Ambiguous slugs return a list of exact paths instead of guessing.
 
 **System prompt injection** (generated automatically by `SkillsMiddleware`):
 
@@ -23,7 +31,7 @@ Available Skills:
 - **passive-recon**: Use when gathering intelligence WITHOUT touching the target: WHOIS,
   DNS, subdomain enumeration, crt.sh, ASN mapping. Triggers on: 'passive recon', 'WHOIS',
   'subdomain', 'amass'.
-  -> Read `/skills/standard/recon/passive-recon/SKILL.md` for full instructions
+  -> `load_skill("passive-recon")` or `load_skill("/skills/standard/recon/passive-recon/SKILL.md")`
 ```
 
 ---

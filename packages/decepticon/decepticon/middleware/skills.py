@@ -102,10 +102,12 @@ Match the current objective against **triggers** — load the most specific matc
 - Multiple matches → load the most specific skill first
 
 ### Access Rules
-- `load_skill("/skills/<category>/<skill-name>/SKILL.md")` — **REQUIRED** for
-  every /skills/* file. Returns the FULL body (no line limit) plus a base
-  directory header and an index of references/* and sibling sub-skills in the
-  same directory.
+- `load_skill("<slug-or-path>")` — **REQUIRED** for every /skills/* file.
+  Accepts an exact `/skills/.../*.md` path, a relative `standard/.../SKILL.md`
+  path, or a unique slug such as `sql-injection`. Returns the FULL body (no
+  line limit) plus a base directory header and an index of references/* and
+  sibling sub-skills in the same directory. If a slug is ambiguous, use one of
+  the exact paths returned in the error.
 - `read_file("/skills/...")` and `bash(command="cat /skills/...")` — DO NOT
   use these for skill files. `/skills/` is served in-process by a local
   FilesystemBackend (not the sandbox); only `load_skill` resolves it.

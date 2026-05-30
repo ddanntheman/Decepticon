@@ -10,11 +10,9 @@ sources) and lets callers resolve a skill by:
 2. trailing slug (``sql-injection`` → ``/skills/standard/analyst/sql-injection/SKILL.md``),
 3. fuzzy match with disambiguation (no silent guessing on ambiguity).
 
-A future PR will plug this resolver into the existing ``load_skill``
-tool so a running agent can name a skill by slug and persist the
-loaded id into LangGraph state for the next turn's prompt. Shipping
-the resolver as a standalone library here lets the integration land
-as a small, focused follow-up against well-tested ground truth.
+The ``load_skill`` tool uses this resolver so a running agent can name
+a skill by exact path, relative path, or unique slug without opening a
+general-purpose filesystem read surface.
 
 Path safety contract:
 
