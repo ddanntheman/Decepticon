@@ -49,6 +49,15 @@ class ImportStats:
 # BloodHound edge types mapped to our EdgeKind with semantically correct
 # relationship types. Lower weight = easier-to-abuse relationship.
 
+_BH_TYPE_SINGULAR: dict[str, str] = {
+    "users": "User",
+    "computers": "Computer",
+    "groups": "Group",
+    "domains": "Domain",
+    "gpos": "GPO",
+    "ous": "OU",
+}
+
 _BH_EDGE_MAP: dict[str, tuple[EdgeKind, float]] = {
     # Group membership
     "MemberOf": (EdgeKind.MEMBER_OF, 0.8),
@@ -241,7 +250,7 @@ def merge_bloodhound_json(
     meta_raw = data.get("meta")
     meta = meta_raw if isinstance(meta_raw, dict) else {}
     object_type = type_hint or meta.get("type") or "Users"
-    type_singular = object_type.rstrip("s")
+    type_singular = _BH_TYPE_SINGULAR.get(object_type.lower(), object_type.rstrip("s"))
 
     items_raw = data.get("data") if "data" in data else data.get("items")
     if items_raw is None:

@@ -54,7 +54,7 @@ def analyze_gpo_abuse(graph: KnowledgeGraph) -> list[GPOFinding]:
     # Identify GPO nodes
     gpo_nodes: dict[str, str] = {}  # node_id -> label
     for node in graph.nodes.values():
-        if node.props.get("bh_type") == "GPO":
+        if str(node.props.get("bh_type", "")).upper() == "GPO":
             gpo_nodes[node.id] = node.label
 
     if not gpo_nodes:
