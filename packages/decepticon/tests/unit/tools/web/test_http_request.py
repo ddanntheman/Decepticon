@@ -14,7 +14,6 @@ import json
 from typing import Any
 
 import decepticon.tools.web.tools as web_tools
-from decepticon.tools.web.tools import http_request
 
 
 class _FakeResp:
@@ -44,7 +43,7 @@ async def test_http_request_runs_inside_running_loop(monkeypatch):
 
     # ainvoke drives the tool coroutine on the *current* running loop — the
     # exact condition that broke the old run_until_complete implementation.
-    raw = await http_request.ainvoke(
+    raw = await web_tools.http_request.ainvoke(
         {"method": "get", "url": "http://target.example/x", "headers_json": '{"X-A": "1"}'}
     )
 
@@ -59,6 +58,8 @@ async def test_http_request_runs_inside_running_loop(monkeypatch):
 
 
 async def test_http_request_invalid_headers_json(monkeypatch):
-    monkeypatch.setattr(web_tools, "_get_session", lambda: _FakeSession())
-    raw = await http_request.ainvoke({"method": "GET", "url": "http://x", "headers_json": "{bad"})
+    monkeypatch.setattr(web_tools, "_get_session", _FakeSession)
+    raw = await web_tools.http_request.ainvoke(
+        {"method": "GET", "url": "http://x", "headers_json": "{bad"}
+    )
     assert json.loads(raw)["error"] == "Invalid headers JSON"
