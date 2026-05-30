@@ -278,3 +278,168 @@ class TestModelOverrideMiddlewareWiring:
 
         assert mw.wrap_model_call(_Req(), handler) == "passthrough"
         assert seen, "handler must be invoked when no override is set"
+
+
+class TestWrapModelCallActiveOverride:
+    def test_active_override_rebinds_and_calls_handler(self, proxy_env: dict[str, str]) -> None:
+        mw = ModelOverrideMiddleware()
+        original = _original_chat_model()
+
+        class _OverrideReq:
+            class runtime:
+                context = {"model_override": "openai/gpt-5.5"}
+
+            state: dict[str, Any] = {}
+            model = original
+            override_called = False
+            last_override_model: Any = None
+
+            def override(self, *, model: Any) -> "_OverrideReq":
+                self.override_called = True
+                self.last_override_model = model
+                return self
+
+        req = _OverrideReq()
+        handler_calls: list[Any] = []
+
+        def handler(request: Any) -> str:
+            handler_calls.append(request)
+            return "RESULT"
+
+        result = mw.wrap_model_call(req, handler)
+
+        assert result == "RESULT"
+        assert len(handler_calls) == 1
+        assert req.override_called
+        bound = req.last_override_model
+        assert isinstance(bound, ChatOpenAI)
+        assert bound.openai_api_base == proxy_env["DECEPTICON_LLM__PROXY_URL"]
+        assert bound.model_name == "openai/gpt-5.5"
+
+    def test_bind_failure_falls_back_to_original_handler(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mw = ModelOverrideMiddleware()
+        original = _original_chat_model()
+
+        def _raise(*args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("decepticon.middleware.model_override._build_proxied_llm", _raise)
+
+        class _OverrideReq:
+            class runtime:
+                context = {"model_override": "openai/gpt-5.5"}
+
+            state: dict[str, Any] = {}
+            model = original
+            override_called = False
+
+            def override(self, *, model: Any) -> "_OverrideReq":
+                self.override_called = True
+                return self
+
+        req = _OverrideReq()
+        handler_calls: list[Any] = []
+
+        def handler(request: Any) -> str:
+            handler_calls.append(request)
+            return "FALLBACK"
+
+        result = mw.wrap_model_call(req, handler)
+
+        assert result == "FALLBACK"
+        assert len(handler_calls) == 1
+        assert handler_calls[0] is req
+        assert not req.override_called
+
+
+class TestAwrapModelCallNoOverride:
+    async def test_async_no_override_passes_through(self) -> None:
+        mw = ModelOverrideMiddleware()
+
+        class _Req:
+            runtime = None
+            state: dict[str, Any] = {}
+
+        seen: list[Any] = []
+
+        async def handler(request: Any) -> str:
+            seen.append(request)
+            return "passthrough"
+
+        result = await mw.awrap_model_call(_Req(), handler)
+        assert result == "passthrough"
+        assert seen
+
+
+class TestAwrapModelCallActiveOverride:
+    async def test_async_active_override_rebinds(self, proxy_env: dict[str, str]) -> None:
+        mw = ModelOverrideMiddleware()
+        original = _original_chat_model()
+
+        class _OverrideReq:
+            class runtime:
+                context = {"model_override": "groq/llama-3.3-70b-versatile"}
+
+            state: dict[str, Any] = {}
+            model = original
+            override_called = False
+            last_override_model: Any = None
+
+            def override(self, *, model: Any) -> "_OverrideReq":
+                self.override_called = True
+                self.last_override_model = model
+                return self
+
+        req = _OverrideReq()
+        handler_calls: list[Any] = []
+
+        async def handler(request: Any) -> str:
+            handler_calls.append(request)
+            return "ARESULT"
+
+        result = await mw.awrap_model_call(req, handler)
+
+        assert result == "ARESULT"
+        assert len(handler_calls) == 1
+        assert req.override_called
+        bound = req.last_override_model
+        assert isinstance(bound, ChatOpenAI)
+        assert bound.openai_api_base == proxy_env["DECEPTICON_LLM__PROXY_URL"]
+        assert bound.model_name == "groq/llama-3.3-70b-versatile"
+
+    async def test_async_bind_failure_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        mw = ModelOverrideMiddleware()
+        original = _original_chat_model()
+
+        def _raise(*args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("decepticon.middleware.model_override._build_proxied_llm", _raise)
+
+        class _OverrideReq:
+            class runtime:
+                context = {"model_override": "groq/llama-3.3-70b-versatile"}
+
+            state: dict[str, Any] = {}
+            model = original
+            override_called = False
+
+            def override(self, *, model: Any) -> "_OverrideReq":
+                self.override_called = True
+                return self
+
+        req = _OverrideReq()
+        handler_calls: list[Any] = []
+
+        async def handler(request: Any) -> str:
+            handler_calls.append(request)
+            return "AFALLBACK"
+
+        result = await mw.awrap_model_call(req, handler)
+
+        assert result == "AFALLBACK"
+        assert len(handler_calls) == 1
+        assert handler_calls[0] is req
+        assert not req.override_called
