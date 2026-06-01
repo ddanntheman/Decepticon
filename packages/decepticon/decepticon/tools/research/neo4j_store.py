@@ -108,6 +108,43 @@ def _encode_props(props: dict[str, Any]) -> str:
         return "{}"
 
 
+_INDEXED_SCALAR_KEYS: frozenset[str] = frozenset(
+    {
+        "ip",
+        "fqdn",
+        "cidr",
+        "url",
+        "cve_id",
+        "cwe_id",
+        "technique_id",
+        "arn",
+        "address",
+        "explored",
+        "compromised",
+        "product",
+        "version",
+        "severity",
+        "validated",
+        "vuln_class",
+        "status",
+        "cracked",
+        "tactic",
+        "admin",
+    }
+)
+
+
+def _promoted_props(scoped_props: dict[str, Any]) -> dict[str, Any]:
+    promoted: dict[str, Any] = {}
+    for key in _INDEXED_SCALAR_KEYS:
+        if key not in scoped_props:
+            continue
+        value = scoped_props[key]
+        if isinstance(value, bool) or isinstance(value, (str, int, float)):
+            promoted[key] = value
+    return promoted
+
+
 class Neo4jStore:
     """Load/query/upsert knowledge graph nodes and edges in Neo4j.
 
@@ -247,6 +284,7 @@ class Neo4jStore:
             n.engagement = $engagement,
             n.created_at = coalesce(n.created_at, $created_at),
             n.updated_at = $updated_at
+        SET n += $promoted
         """
         params = {
             "id": node.id,
@@ -257,6 +295,7 @@ class Neo4jStore:
             "engagement": engagement,
             "created_at": node.created_at,
             "updated_at": now,
+            "promoted": _promoted_props(scoped_props),
         }
         with self._driver.session(database=self._database) as session:
             session.run(query, params)
@@ -320,6 +359,7 @@ class Neo4jStore:
                     "engagement": scoped_props["engagement"],
                     "created_at": node.created_at,
                     "updated_at": now,
+                    "promoted": _promoted_props(scoped_props),
                 }
             )
 
@@ -336,6 +376,7 @@ class Neo4jStore:
                     n.engagement = row.engagement,
                     n.created_at = coalesce(n.created_at, row.created_at),
                     n.updated_at = row.updated_at
+                SET n += row.promoted
                 """
                 session.run(query, batch=batch)
                 total += len(batch)
