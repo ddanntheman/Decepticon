@@ -172,7 +172,10 @@ cli-dev: infra
 	cd clients/cli && (npm run dev & DECEPTICON_API_URL=$${DECEPTICON_API_URL:-http://localhost:2024} node --watch dist/index.js & wait)
 
 ## Next.js dev server locally — infra stays in Docker with hot-reload.
-web-dev: infra web-db-ensure
+web-dev: infra web-db-ensure node-install
+	# Build streaming first: both the Next dev server and the PTY-spawned CLI
+	# import @decepticon/streaming, which resolves to its dist/ build.
+	npm run build --workspace=@decepticon/streaming
 	@$(COMPOSE_WATCH) watch --no-up --quiet langgraph &
 	@echo "[web-dev] Starting terminal server (ws://localhost:3003)..."
 	@cd $(WEB_DIR) && npx tsx server/terminal-server.ts &
@@ -277,6 +280,9 @@ quality-strict: ci-lint ci-test-coverage quality-cli web-lint web-build
 # into the root node_modules — no separate clients/web/node_modules tree.
 
 web-build: node-install
+	# streaming workspace first — the web resolves @decepticon/streaming to its
+	# dist/ via package exports (no src path alias), so next build needs it.
+	npm run build --workspace=@decepticon/streaming
 	cd $(WEB_DIR) && npx prisma generate && npm run build
 
 ## Hot-swap web dashboard into running container (~15s vs ~5min docker build).
