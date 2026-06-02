@@ -76,6 +76,9 @@ export function WebTerminal({
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track whether we've shown the reconnecting message (to avoid spam)
   const reconnectMsgShownRef = useRef(false);
+  // True between sending a ping and receiving the next inbound frame; the
+  // pong-timeout only force-closes the socket while this is still set.
+  const awaitingPongRef = useRef(false);
   // Track the onData listener for manual retry so we can dispose it
   const retryListenerRef = useRef<{ dispose: () => void } | null>(null);
   // Track the main onData listener so we can dispose it on reconnect
@@ -135,6 +138,7 @@ export function WebTerminal({
     };
 
     ws.onmessage = (event) => {
+      awaitingPongRef.current = false;
       const data = typeof event.data === "string" ? event.data : "";
       if (data.startsWith("{")) {
         try {
@@ -334,9 +338,10 @@ export function WebTerminal({
   }, [init, cleanup]);
 
   // ── Heartbeat: detect silently-dead sockets ──────────────────────
-  // Ping every 15s; if no data received from server within 20s of a
-  // ping, the socket is half-open — force-close and let reconnect handle it.
-  // Pong responses are filtered by onmessage above (never reach terminal).
+  // Ping every 15s. A live socket answers with a pong (or is already
+  // streaming PTY output); both clear awaitingPongRef via onmessage. Only when
+  // nothing came back within PONG_TIMEOUT is the socket half-open — close it
+  // and let reconnect take over. Pongs are filtered in onmessage.
   useEffect(() => {
     const PING_INTERVAL = 15000;
     const PONG_TIMEOUT = 5000;
@@ -346,11 +351,11 @@ export function WebTerminal({
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       try {
+        awaitingPongRef.current = true;
         ws.send(JSON.stringify({ type: "ping" }));
         clearTimeout(pongTimer);
         pongTimer = setTimeout(() => {
-          // If WS is still the same instance and still "open", it's half-open — kill it
-          if (wsRef.current === ws && ws.readyState === WebSocket.OPEN) {
+          if (awaitingPongRef.current && wsRef.current === ws && ws.readyState === WebSocket.OPEN) {
             ws.close();
           }
         }, PONG_TIMEOUT);
