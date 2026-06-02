@@ -45,23 +45,14 @@ from decepticon.tools.references.tools import (
     methodology_lookup,
     payload_search,
 )
-from decepticon.tools.research.tools import (
-    kg_add_edge,
-    kg_add_node,
-    kg_neighbors,
-    kg_query,
-    kg_stats,
-)
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
+# KG tools were removed pending the Neo4j middleware redesign (see
+# docs/design/neo4j-research-notes.md). KG surface is currently limited
+# to the analyst agent.
 _STANDARD_TOOLS: dict[str, Any] = {
     t.name: t
     for t in [
-        kg_add_node,
-        kg_add_edge,
-        kg_query,
-        kg_neighbors,
-        kg_stats,
         payload_search,
         methodology_lookup,
         killchain_lookup,

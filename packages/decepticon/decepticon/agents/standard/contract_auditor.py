@@ -50,34 +50,21 @@ from decepticon.llm import LLMFactory
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.contracts.tools import CONTRACT_TOOLS
-from decepticon.tools.reporting.tools import report_hackerone
-from decepticon.tools.research.tools import (
-    cve_lookup,
-    kg_add_edge,
-    kg_add_node,
-    kg_ingest_sarif,
-    kg_neighbors,
-    kg_query,
-    kg_stats,
-)
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
+# Generic KG tools, kg_ingest_sarif, cve_lookup, and report_hackerone
+# were removed pending the Neo4j middleware redesign (see
+# docs/design/neo4j-research-notes.md). The CONTRACT_TOOLS surface
+# (Solidity pattern scanner, Slither ingest, Foundry PoC test
+# generators) is kept because it is the contract auditor's primary
+# lane. Note: slither_ingest inside CONTRACT_TOOLS still routes through
+# the broken graph_transaction shim; that is in scope for the same
+# refactor.
 _STANDARD_TOOLS: dict[str, Any] = {
     t.name: t
     for t in [
         # Contract tools
         *CONTRACT_TOOLS,
-        # KG core + SARIF ingest
-        kg_add_node,
-        kg_add_edge,
-        kg_query,
-        kg_neighbors,
-        kg_stats,
-        kg_ingest_sarif,
-        # CVE intelligence
-        cve_lookup,
-        # Reporting (prompt REPORT step files a HackerOne-style finding report)
-        report_hackerone,
         # Execution
         *BASH_TOOLS,
     ]

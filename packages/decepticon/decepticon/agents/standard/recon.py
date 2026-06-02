@@ -52,46 +52,17 @@ from decepticon.llm import LLMFactory
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.references.tools import killchain_lookup, oneliner_search
-from decepticon.tools.research.tools import (
-    kg_add_edge,
-    kg_add_node,
-    kg_backend_health,
-    kg_ingest_dnsx,
-    kg_ingest_ffuf,
-    kg_ingest_httpx_jsonl,
-    kg_ingest_katana,
-    kg_ingest_masscan,
-    kg_ingest_nmap_xml,
-    kg_ingest_nuclei_jsonl,
-    kg_ingest_subfinder,
-    kg_ingest_testssl,
-    kg_neighbors,
-    kg_query,
-    kg_stats,
-)
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
 # Name-keyed registry so plugin overrides can target specific tools.
+# KG tools were removed pending the Neo4j middleware redesign (see
+# docs/design/neo4j-research-notes.md). Recon writes findings to files
+# (recon/SUMMARY.md, findings/FIND-NNN.md); the future KG middleware
+# will ingest those files into Neo4j without burdening the agent's
+# tool surface.
 _STANDARD_TOOLS: dict[str, Any] = {
     t.name: t
     for t in [
-        # KG core
-        kg_add_node,
-        kg_add_edge,
-        kg_query,
-        kg_neighbors,
-        kg_stats,
-        kg_backend_health,
-        # KG ingest (recon outputs)
-        kg_ingest_nmap_xml,
-        kg_ingest_nuclei_jsonl,
-        kg_ingest_subfinder,
-        kg_ingest_httpx_jsonl,
-        kg_ingest_dnsx,
-        kg_ingest_katana,
-        kg_ingest_masscan,
-        kg_ingest_ffuf,
-        kg_ingest_testssl,
         # References
         oneliner_search,
         killchain_lookup,

@@ -46,35 +46,20 @@ from decepticon.tools.ad.tools import AD_TOOLS
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.references.tools import killchain_lookup
-from decepticon.tools.research.tools import (
-    kg_add_edge,
-    kg_add_node,
-    kg_ingest_asrep_hashes,
-    kg_ingest_crackmapexec,
-    kg_neighbors,
-    kg_query,
-    kg_stats,
-    plan_attack_chains,
-    suggest_objectives_from_chains,
-)
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
+# Generic KG tools and the chain planner were removed pending the Neo4j
+# middleware redesign (see docs/design/neo4j-research-notes.md). The
+# AD_TOOLS surface (BloodHound ingestion, DCSync / ADCS / delegation /
+# GPO / shadow-creds audits, Kerberos hash classification) is kept
+# because BloodHound integration is the AD operator's primary lane.
+# Note: AD_TOOLS themselves still go through the broken graph_transaction
+# shim internally; that is in scope for the same refactor.
 _STANDARD_TOOLS: dict[str, Any] = {
     t.name: t
     for t in [
         # AD tools
         *AD_TOOLS,
-        # KG core + credential ingest
-        kg_add_node,
-        kg_add_edge,
-        kg_query,
-        kg_neighbors,
-        kg_stats,
-        kg_ingest_crackmapexec,
-        kg_ingest_asrep_hashes,
-        # Attack chain planning
-        plan_attack_chains,
-        suggest_objectives_from_chains,
         # References
         killchain_lookup,
         # Execution

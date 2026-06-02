@@ -54,29 +54,17 @@ from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
-from decepticon.tools.research.tools import (
-    kg_add_edge,
-    kg_add_node,
-    kg_neighbors,
-    kg_query,
-    kg_stats,
-    kg_triage_binary,
-)
 from decepticon.tools.reversing.tools import REVERSING_TOOLS
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
+# KG tools were removed pending the Neo4j middleware redesign (see
+# docs/design/neo4j-research-notes.md). KG surface is currently limited
+# to the analyst agent.
 _STANDARD_TOOLS: dict[str, Any] = {
     t.name: t
     for t in [
         # Reversing tools
         *REVERSING_TOOLS,
-        # KG core + binary triage
-        kg_add_node,
-        kg_add_edge,
-        kg_query,
-        kg_neighbors,
-        kg_stats,
-        kg_triage_binary,
         # Execution
         *BASH_TOOLS,
     ]
