@@ -187,7 +187,12 @@ def _make_kg(**_: Any):
 
     try:
         return KGMiddleware()
-    except (KGStoreConfigError, KGStoreUnavailableError) as exc:
+    except (KGStoreConfigError, KGStoreUnavailableError, ImportError) as exc:
+        # ImportError covers the case where the optional ``neo4j``
+        # driver isn't installed in the env that imports analyst.py
+        # (e.g. CI runners that ship the framework wheel without the
+        # KG runtime deps but still load module-level
+        # ``graph = create_analyst_agent()``).
         logging.getLogger(__name__).warning("KG slot skipped: %s", exc)
         return None
 
