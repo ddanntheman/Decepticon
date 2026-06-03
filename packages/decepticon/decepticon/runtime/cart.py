@@ -213,6 +213,52 @@ def diff_snapshots(a: EngagementSnapshot, b: EngagementSnapshot) -> SnapshotDelt
 
 
 @runtime_checkable
+class AttackGraphProtocol(Protocol):
+    """What CART expects of any attack-graph backend.
+
+    Implemented by the KGMiddleware-owned ``KGStore`` (see
+    ``decepticon.middleware.kg_internal.store``). CART consumes only
+    this surface so a future plugin (e.g. an enterprise variant with
+    extra fields, or a vector-augmented variant) can be substituted
+    without touching ``cart.py`` internals.
+
+    Polling model in the initial version: callers fetch ``revision()``
+    and, when it changes, call ``snapshot()`` to materialize the
+    current state. A pub/sub variant (``subscribe(callback)``) is a
+    follow-up and is intentionally absent from this minimal contract —
+    the design spec at
+    ``docs/design/2026-06-03-kg-middleware-redesign.md`` § 4.7 leaves
+    it open until Neo4j 5.x change-data-capture is wired in.
+
+    The ``engagement`` keyword scopes both methods to one engagement
+    label. CART operates per-engagement and never sees a global graph
+    view — the multi-tenant safety invariant lives at this boundary.
+    """
+
+    def revision(self, *, engagement: str) -> str:
+        """Opaque revision token for the named engagement.
+
+        Changes when the graph's mutable surface for the engagement
+        changes (any node/edge create or update). Cheap to call: a
+        single Cypher MATCH against an indexed property.
+
+        Callers should treat the token as opaque — only equality is
+        meaningful, ordering is not.
+        """
+        ...
+
+    def snapshot(self, *, engagement: str) -> EngagementSnapshot:
+        """Build a frozen snapshot for the named engagement.
+
+        The snapshot is suitable input for :func:`diff_snapshots`. The
+        cost is one bounded Cypher MATCH per node label, so the call
+        is O(graph_size) for the engagement — invoke only when
+        :meth:`revision` indicates a change.
+        """
+        ...
+
+
+@runtime_checkable
 class OPPLANAdapter(Protocol):
     """Seam between CART and the OPPLAN module.
 
