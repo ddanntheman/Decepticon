@@ -33,13 +33,15 @@ the rewrite addresses five of the load-bearing traps catalogued in
      bitmask is preserved as a node prop on objects from each file so
      "partial collection" debugging works.
 
-NodeKind values **stay on the legacy generic family** (USER, HOST,
-GROUP, DOMAIN) so the AD analysis tools (`delegation.py`, `gpo.py`,
-`dcsync.py`, `shadow_creds.py`, `adcs.py`) keep working through their
-existing ``bh_type`` prop checks. AD-prefixed kinds (`ADUser` /
-`ADComputer` / etc.) are reserved for a dedicated follow-up PR that
-migrates the analysis tools in lockstep — see the BloodHound RFC for
-the plan.
+Every BloodHound-emitted kind lands under its **dedicated
+``AD_*`` NodeKind** value (``ADUser`` / ``ADComputer`` / ``ADGroup``
+/ ``ADDomain`` / ``ADGPO`` / ``ADOU`` / ``ADContainer`` plus the
+ADCS family). The RFC Option-A endgame for §4.6. AD analysis tools
+(``delegation`` / ``gpo`` / ``dcsync`` / ``shadow_creds`` /
+``adcs``) filter on the ``bh_type`` prop instead of ``NodeKind``, so
+the label change is transparent to them. The consumer that gains
+from real BHCE-faithful labels is the chain planner + any prompt-
+written Cypher that filters by node label.
 """
 
 from __future__ import annotations
@@ -157,25 +159,25 @@ _BH_EDGE_MAP: dict[str, tuple[EdgeKind, float]] = {
 def _node_kind_for_bh(type_name: str) -> NodeKind:
     """Map BloodHound object type to the right NodeKind.
 
-    Generic identity kinds (User / Computer / Group / Domain / GPO /
-    OU / Container) stay on the legacy NodeKind family so the AD
-    analysis tools (``delegation`` / ``gpo`` / ``dcsync`` / etc.)
-    keep matching on their ``bh_type`` props. ADCS kinds use the
-    dedicated ``AD_*`` family from V003 — they had no legacy NodeKind
-    equivalent (overloading them onto ``GROUP`` would silently break
-    BHCE 5.x semantics) so this is where Option A from the BloodHound
-    RFC first lands in code.
+    Every BloodHound-emitted kind now lands under its dedicated
+    AD-prefixed NodeKind value (the RFC §4.6 Option-A endgame). The
+    AD analysis tools (``delegation`` / ``gpo`` / ``dcsync`` /
+    ``shadow_creds`` / ``adcs``) filter on the ``bh_type`` prop
+    rather than on ``NodeKind``, so the label change is transparent
+    to them. Cross-domain chain analysis (``chain.py`` / Cypher
+    queries written in agent prompts) is the consumer that now
+    sees real BHCE-faithful labels (``:ADUser`` / ``:ADComputer``
+    / ``:ADGroup`` / ``:ADDomain`` / ``:ADGPO`` / ``:ADOU`` /
+    ``:ADContainer``).
     """
     return {
-        "User": NodeKind.USER,
-        "Computer": NodeKind.HOST,
-        "Group": NodeKind.GROUP,
-        "Domain": NodeKind.DOMAIN,
-        # GPO/OU/Container act as policy / organizational containers
-        # in the legacy schema.
-        "GPO": NodeKind.GROUP,
-        "OU": NodeKind.GROUP,
-        "Container": NodeKind.GROUP,
+        "User": NodeKind.AD_USER,
+        "Computer": NodeKind.AD_COMPUTER,
+        "Group": NodeKind.AD_GROUP,
+        "Domain": NodeKind.AD_DOMAIN,
+        "GPO": NodeKind.AD_GPO,
+        "OU": NodeKind.AD_OU,
+        "Container": NodeKind.AD_CONTAINER,
         # ADCS kinds use the dedicated V003 NodeKind values.
         "CertTemplate": NodeKind.AD_CERT_TEMPLATE,
         "EnterpriseCA": NodeKind.AD_ENTERPRISE_CA,
@@ -183,7 +185,7 @@ def _node_kind_for_bh(type_name: str) -> NodeKind:
         "AIACA": NodeKind.AD_AIA_CA,
         "NTAuthStore": NodeKind.AD_NT_AUTH_STORE,
         "IssuancePolicy": NodeKind.AD_ISSUANCE_POLICY,
-    }.get(type_name, NodeKind.HOST)
+    }.get(type_name, NodeKind.AD_COMPUTER)
 
 
 def _key_for_object(type_name: str, object_id: str) -> str:
