@@ -34,3 +34,19 @@ scripts/install.sh               @PurpleCHOIms
 # whole running stack for every OSS user
 docker-compose.yml               @PurpleCHOIms
 containers/*.Dockerfile          @PurpleCHOIms
+
+# Security policy — Semgrep rules and reporting policy are guard rails;
+# weakening or removing them is a Tier-owner change (see
+# docs/adr/0002-pr-tiering-and-blast-radius.md).
+.semgrep/**                      @PurpleCHOIms
+SECURITY.md                      @PurpleCHOIms
+docs/security/**                 @PurpleCHOIms
+
+# Governance documents — codify how the project is operated. Edits
+# here change the rules every other contributor (human or AI) is held
+# to, so they require owner review even though they ship no runtime
+# behavior. Closes the gap docs/COWORK.md §7 acknowledged.
+docs/COWORK.md                   @PurpleCHOIms
+docs/adr/**                      @PurpleCHOIms
+CONTRIBUTING_AGENT.md            @PurpleCHOIms
+.github/pull_request_template.md @PurpleCHOIms
