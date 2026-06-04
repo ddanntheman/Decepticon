@@ -592,6 +592,112 @@ def _ingest_gp_links(state: _IngestState, src_key: str, obj: dict[str, Any]) -> 
         )
 
 
+_LOCAL_GROUP_RID_TO_EDGE: dict[str, tuple[EdgeKind, float]] = {
+    "500": (EdgeKind.ADMIN_TO, 0.3),
+    "555": (EdgeKind.CAN_ACCESS, 0.6),  # CanRDP
+    "562": (EdgeKind.CAN_ACCESS, 0.6),  # ExecuteDCOM
+    "580": (EdgeKind.CAN_ACCESS, 0.5),  # CanPSRemote
+}
+
+
+def _rid_from_local_group_id(object_id: str) -> str | None:
+    """Extract the trailing numeric RID from a SharpHound LocalGroup id.
+
+    BHCE-emitted ids take two shapes:
+      - ``<computerSID>-<RID>`` (numeric trailing — built-in groups)
+      - ``<computerSID>__<groupname>`` (string suffix — non-built-in)
+
+    Returns the RID string when the trailing fragment is purely
+    numeric so the caller can look it up in
+    ``_LOCAL_GROUP_RID_TO_EDGE``.
+    """
+    tail = object_id.rsplit("-", 1)[-1]
+    return tail if tail.isdigit() else None
+
+
+def _ingest_local_groups(state: _IngestState, computer_key: str, obj: dict[str, Any]) -> None:
+    """Computer ``LocalGroups[]`` → ``ADLocalGroup`` nodes + direct
+    access edges per RID.
+
+    Per local group: emits one ``ADLocalGroup`` node,
+    ``computer --CONTAINS--> ADLocalGroup``, and for each member
+    ``principal --MEMBER_OF_LOCAL_GROUP--> ADLocalGroup``. When the
+    group's trailing RID matches a known lateral-movement primitive
+    (-500 / -555 / -562 / -580), an extra direct
+    ``principal --<edge>--> computer`` edge lands so the chain
+    planner sees the path without re-deriving it from
+    ``MEMBER_OF_LOCAL_GROUP`` traversal.
+    """
+    local_groups = obj.get("LocalGroups") or []
+    if not isinstance(local_groups, list):
+        return
+    for lg in local_groups:
+        if not isinstance(lg, dict):
+            continue
+        lg_id = lg.get("ObjectIdentifier")
+        if not isinstance(lg_id, str) or not lg_id:
+            continue
+        lg_name = lg.get("Name") or lg_id
+        lg_key = _key_for_object("LocalGroup", lg_id)
+        state.upsert_observation(
+            kind=NodeKind.AD_LOCAL_GROUP,
+            key=lg_key,
+            label=str(lg_name),
+            bh_type="LocalGroup",
+            props={
+                "ComputerObjectIdentifier": _bh_id_from_key(computer_key),
+                "name": lg_name,
+            },
+        )
+        state.add_edge(
+            src_key=computer_key,
+            dst_key=lg_key,
+            kind=EdgeKind.CONTAINS,
+            weight=1.0,
+            props={"bh_right": "ContainsLocalGroup"},
+        )
+
+        rid = _rid_from_local_group_id(lg_id)
+        direct_edge = _LOCAL_GROUP_RID_TO_EDGE.get(rid) if rid else None
+
+        results = lg.get("Results") or []
+        if not isinstance(results, list):
+            continue
+        for member in results:
+            if not isinstance(member, dict):
+                continue
+            principal_sid = member.get("ObjectIdentifier")
+            if not isinstance(principal_sid, str) or not principal_sid:
+                continue
+            principal_type = member.get("ObjectType") or "User"
+            principal_type = (
+                principal_type if principal_type in _BH_TYPE_SINGULAR.values() else "User"
+            )
+            principal_key = _ensure_placeholder(
+                state, sid=principal_sid, default_type=principal_type
+            )
+            state.add_edge(
+                src_key=principal_key,
+                dst_key=lg_key,
+                kind=EdgeKind.MEMBER_OF_LOCAL_GROUP,
+                weight=0.6,
+                props={"bh_right": "MemberOfLocalGroup"},
+            )
+            if direct_edge is not None:
+                edge_kind, weight = direct_edge
+                state.add_edge(
+                    src_key=principal_key,
+                    dst_key=computer_key,
+                    kind=edge_kind,
+                    weight=weight,
+                    props={
+                        "bh_right": "LocalGroupRid",
+                        "rid": rid,
+                        "via_local_group": lg_id,
+                    },
+                )
+
+
 def _ingest_enterprise_ca_edges(state: _IngestState, src_key: str, obj: dict[str, Any]) -> None:
     """``EnterpriseCA`` extras: ``EnabledCertTemplates[]`` and
     ``HostingComputer``.
@@ -722,6 +828,8 @@ def _merge_one_payload(state: _IngestState, data: dict[str, Any], *, type_hint: 
             _ingest_enterprise_ca_edges(state, src_key, obj)
         if type_singular == "IssuancePolicy":
             _ingest_issuance_policy_link(state, src_key, obj)
+        if type_singular == "Computer":
+            _ingest_local_groups(state, src_key, obj)
         if hasattr(state.stats, counter_attr):
             setattr(state.stats, counter_attr, getattr(state.stats, counter_attr) + 1)
 

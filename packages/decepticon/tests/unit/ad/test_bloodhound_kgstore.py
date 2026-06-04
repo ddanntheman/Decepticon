@@ -653,3 +653,167 @@ class TestAdcsIngest:
         stats = ingest_bloodhound_zip(zip_path, engagement="t", store=store)
         assert stats.certtemplates == 1
         assert any(obs["kind"] == "ADCertTemplate" for obs in store.observations)
+
+
+# ── LocalGroups ingest + RID-based direct edges ─────────────────────
+
+
+class TestLocalGroupsIngest:
+    """Computer ``LocalGroups[]`` → ``ADLocalGroup`` nodes plus the
+    BHCE-equivalent direct lateral-movement edges by built-in RID."""
+
+    def _bh(self, *, lg_id: str, members: list[dict[str, Any]]) -> dict[str, Any]:
+        return {
+            "meta": {"type": "computers"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-1001",
+                    "Properties": {"name": "ws01"},
+                    "LocalGroups": [
+                        {
+                            "ObjectIdentifier": lg_id,
+                            "Name": "BUILTIN\\Whatever",
+                            "Results": members,
+                        }
+                    ],
+                }
+            ],
+        }
+
+    def test_local_group_node_emitted_under_ad_local_group_label(self) -> None:
+        store = _FakeKGStore()
+        merge_bloodhound_json(
+            self._bh(
+                lg_id="S-1-5-21-1-1-1-1001-500",
+                members=[
+                    {
+                        "ObjectIdentifier": "S-1-5-21-1-1-1-1106",
+                        "ObjectType": "User",
+                    }
+                ],
+            ),
+            engagement="t",
+            store=store,
+        )
+        node = store.nodes_by_key().get("bh::LocalGroup::S-1-5-21-1-1-1-1001-500")
+        assert node is not None
+        assert node["kind"] == "ADLocalGroup"
+
+    def test_computer_contains_local_group(self) -> None:
+        store = _FakeKGStore()
+        merge_bloodhound_json(
+            self._bh(
+                lg_id="S-1-5-21-1-1-1-1001-500",
+                members=[
+                    {
+                        "ObjectIdentifier": "S-1-5-21-1-1-1-1106",
+                        "ObjectType": "User",
+                    }
+                ],
+            ),
+            engagement="t",
+            store=store,
+        )
+        contains = store.edges_of_kind("CONTAINS")
+        assert any(
+            "S-1-5-21-1-1-1-1001" in s
+            and "S-1-5-21-1-1-1-1001-500" in d
+            and p.get("bh_right") == "ContainsLocalGroup"
+            for s, d, p in contains
+        )
+
+    def test_member_emits_member_of_local_group_edge(self) -> None:
+        store = _FakeKGStore()
+        merge_bloodhound_json(
+            self._bh(
+                lg_id="S-1-5-21-1-1-1-1001-500",
+                members=[
+                    {
+                        "ObjectIdentifier": "S-1-5-21-1-1-1-1106",
+                        "ObjectType": "User",
+                    }
+                ],
+            ),
+            engagement="t",
+            store=store,
+        )
+        mol = store.edges_of_kind("MEMBER_OF_LOCAL_GROUP")
+        assert any("1106" in s and "1001-500" in d for s, d, _ in mol)
+
+    @pytest.mark.parametrize(
+        "rid,expected_kind",
+        [
+            ("500", "ADMIN_TO"),  # BUILTIN\Administrators
+            ("555", "CAN_ACCESS"),  # BUILTIN\Remote Desktop Users
+            ("562", "CAN_ACCESS"),  # BUILTIN\Distributed COM Users
+            ("580", "CAN_ACCESS"),  # BUILTIN\Remote Management Users
+        ],
+    )
+    def test_built_in_rid_emits_direct_lateral_edge(self, rid: str, expected_kind: str) -> None:
+        store = _FakeKGStore()
+        merge_bloodhound_json(
+            self._bh(
+                lg_id=f"S-1-5-21-1-1-1-1001-{rid}",
+                members=[
+                    {
+                        "ObjectIdentifier": "S-1-5-21-1-1-1-1106",
+                        "ObjectType": "User",
+                    }
+                ],
+            ),
+            engagement="t",
+            store=store,
+        )
+        direct_edges = store.edges_of_kind(expected_kind)
+        # The direct edge must point principal → computer (not principal
+        # → local group), with the RID + via-local-group provenance.
+        assert any(
+            "1106" in s
+            and "1001" in d
+            and "1001-500" not in d
+            and "1001-555" not in d
+            and "1001-562" not in d
+            and "1001-580" not in d
+            and p.get("rid") == rid
+            and p.get("bh_right") == "LocalGroupRid"
+            for s, d, p in direct_edges
+        )
+
+    def test_non_catalogue_rid_does_not_emit_direct_edge(self) -> None:
+        store = _FakeKGStore()
+        merge_bloodhound_json(
+            self._bh(
+                lg_id="S-1-5-21-1-1-1-1001-999",  # RID 999 has no primitive
+                members=[
+                    {
+                        "ObjectIdentifier": "S-1-5-21-1-1-1-1106",
+                        "ObjectType": "User",
+                    }
+                ],
+            ),
+            engagement="t",
+            store=store,
+        )
+        admin = store.edges_of_kind("ADMIN_TO")
+        can_access = store.edges_of_kind("CAN_ACCESS")
+        # Only MEMBER_OF_LOCAL_GROUP — no ADMIN_TO / CAN_ACCESS direct.
+        assert all("1001-999" not in s for s, _d, _p in admin + can_access)
+
+    def test_non_numeric_suffix_id_does_not_emit_direct_edge(self) -> None:
+        store = _FakeKGStore()
+        merge_bloodhound_json(
+            self._bh(
+                lg_id="S-1-5-21-1-1-1-1001__custom-group",
+                members=[
+                    {
+                        "ObjectIdentifier": "S-1-5-21-1-1-1-1106",
+                        "ObjectType": "User",
+                    }
+                ],
+            ),
+            engagement="t",
+            store=store,
+        )
+        admin = store.edges_of_kind("ADMIN_TO")
+        # Non-numeric trailing fragment skips the RID lookup entirely.
+        assert all("custom-group" not in s for s, _d, _p in admin)
