@@ -435,7 +435,9 @@ def _partition_bc_targets(included: list[dict[str, Any]]) -> tuple[list[str], li
             continue
         category = str(attrs.get("category") or "").strip().lower()
         gid = str(
-            ((item.get("relationships") or {}).get("target_group") or {}).get("data", {}).get("id")
+            (((item.get("relationships") or {}).get("target_group") or {}).get("data") or {}).get(
+                "id"
+            )
             or ""
         )
         eligible = group_in_scope.get(gid, True)
