@@ -131,7 +131,8 @@ _PHASE_FOR_ROLE: dict[str, str] = {
     # Bounty bundle (fork-only) — phase-scope each appsec / bug-bounty
     # specialist so it gets the per-phase MoC summary under Skillogy.
     # Phases below are all seeded ``:Phase`` nodes and match each role's
-    # skill subdomain.
+    # skill subdomain. ``scout`` is the intake / program-selection agent.
+    "scout": "planning",
     "asvs": "web-exploitation",
     "api_security": "web-exploitation",
     "authn_session": "web-exploitation",

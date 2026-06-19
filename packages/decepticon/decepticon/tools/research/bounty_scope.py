@@ -35,6 +35,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from decepticon.middleware.egress import compile_egress_policy
+from decepticon.tools.research.bounty_intake import SCANNER_COMMAND_PATTERNS
 from decepticon_core.types.roe import EnforcementMode, MachineEnforcement
 from decepticon_core.utils.logging import get_logger
 
@@ -138,6 +139,10 @@ def ingest_bounty_scope(
     mode: str = "enforce",
     allow_cloud_metadata: bool = False,
     scope_text: str = "",
+    no_automated_tools: bool = False,
+    forbidden_command_patterns: str = "[]",
+    min_inter_request_delay_ms: int = 0,
+    max_concurrent_connections: int = 0,
 ) -> str:
     """Ingest a bug-bounty program's scope and hard-enforce it via the RoE.
 
@@ -174,6 +179,19 @@ def ingest_bounty_scope(
         scope_text: Optional raw pasted scope text. Used only as a
             best-effort fallback to populate ``in_scope`` when the JSON
             array is empty — always prefer passing structured arrays.
+        no_automated_tools: Set ``True`` when the program forbids automated
+            scanning. Expands a curated set of scanner command regexes into
+            ``forbidden_command_patterns`` so the command parser refuses to
+            launch them (nuclei, sqlmap, gobuster, ffuf, ZAP, …).
+        forbidden_command_patterns: JSON array of extra regex patterns to
+            block at the command parser (merged with the curated scanner set
+            when ``no_automated_tools`` is true). Example:
+            ``'["(?i)\\bmasscan\\b"]'``.
+        min_inter_request_delay_ms: Minimum delay between requests, in
+            milliseconds, when the program states a request-rate cap (e.g. a
+            10 req/s cap → ``100``). ``0`` leaves it unset.
+        max_concurrent_connections: Cap on concurrent connections when the
+            program limits parallelism. ``0`` leaves it unset.
 
     Returns:
         JSON with the resolved scope, the path to the written ``roe.json``,
@@ -215,12 +233,25 @@ def ingest_bounty_scope(
             "remains reachable. Provide in-scope assets for a tight boundary."
         )
 
+    forbidden_patterns: list[str] = list(_parse_json_array(forbidden_command_patterns))
+    if no_automated_tools:
+        forbidden_patterns = list(SCANNER_COMMAND_PATTERNS) + forbidden_patterns
+    # De-dupe while preserving order.
+    forbidden_patterns = list(dict.fromkeys(p for p in forbidden_patterns if p))
+
+    delay_ms = max(0, int(min_inter_request_delay_ms or 0))
+    max_conn = int(max_concurrent_connections or 0)
+
     machine_enforcement: dict[str, Any] = {
         "mode": mode_norm,
         "in_scope": _scope_rules(in_scope_assets),
         "out_of_scope": _scope_rules(out_scope_assets),
         "allow_cloud_metadata": bool(allow_cloud_metadata),
+        "forbidden_command_patterns": forbidden_patterns,
+        "min_inter_request_delay_ms": delay_ms,
     }
+    if max_conn > 0:
+        machine_enforcement["max_concurrent_connections"] = max_conn
 
     bounty_meta: dict[str, Any] = {
         "platform": (platform or "hackerone").strip().lower(),
@@ -281,6 +312,9 @@ def ingest_bounty_scope(
             "excluded_classes": excluded,
             "platform": bounty_meta["platform"],
             "program_handle": bounty_meta["program_handle"],
+            "forbidden_command_patterns": forbidden_patterns,
+            "min_inter_request_delay_ms": delay_ms,
+            "max_concurrent_connections": max_conn or None,
             "egress_policy": egress_preview,
             "hard_enforced": mode_norm == EnforcementMode.ENFORCE.value and wrote,
             "warnings": warnings,

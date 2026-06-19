@@ -225,10 +225,11 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
     "scanner": _BASH_AGENT_SLOTS,
     "exploiter": _BASH_AGENT_SLOTS,
     # ── Bounty bundle bash-executing specialists (fork-only appsec /
-    # bug-bounty slate). All ten are bash-driven, RoE-scoped, and
-    # HITL-gated — identical slot stack to the standard bash agents so
-    # they inherit ENGAGEMENT_CONTEXT (RoE scope injection),
-    # SANDBOX_NOTIFICATION, and HITL_APPROVAL. ──
+    # bug-bounty slate). All are bash-driven, RoE-scoped, and HITL-gated
+    # — identical slot stack to the standard bash agents so they inherit
+    # ENGAGEMENT_CONTEXT (RoE scope injection), SANDBOX_NOTIFICATION, and
+    # HITL_APPROVAL. ``scout`` is the intake agent that runs first. ──
+    "scout": _BASH_AGENT_SLOTS,
     "asvs": _BASH_AGENT_SLOTS,
     "mitre_attack": _BASH_AGENT_SLOTS,
     "api_security": _BASH_AGENT_SLOTS,
