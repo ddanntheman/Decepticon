@@ -534,6 +534,20 @@ AGENT_TIERS: dict[str, Tier] = {
     "ics_operator": Tier.MID,
     "forensicator": Tier.MID,
     "supply_chain_operator": Tier.MID,
+    # Bounty bundle (fork-only). HIGH for the high-payout chained-logic
+    # specialists (account takeover, multi-step business-logic abuse,
+    # SSRF → cloud pivot); MID for the structured-audit / enumeration
+    # specialists.
+    "authn_session": Tier.HIGH,
+    "business_logic": Tier.HIGH,
+    "ssrf_cloud": Tier.HIGH,
+    "asvs": Tier.MID,
+    "mitre_attack": Tier.MID,
+    "api_security": Tier.MID,
+    "graphql_security": Tier.MID,
+    "clientside_security": Tier.MID,
+    "llm_security": Tier.MID,
+    "secrets_cicd": Tier.MID,
     # LOW — high-throughput, low reasoning depth. Recon / triage / docs.
     "soundwave": Tier.LOW,
     "recon": Tier.LOW,
@@ -568,6 +582,19 @@ AGENT_TEMPERATURES: dict[str, float] = {
     "ics_operator": 0.1,
     "forensicator": 0.2,
     "supply_chain_operator": 0.2,
+    # Bounty bundle (fork-only). Low temperatures for deterministic
+    # audit / enumeration; slightly higher where creative chaining helps
+    # (business-logic abuse, LLM prompt-injection).
+    "asvs": 0.1,
+    "mitre_attack": 0.2,
+    "api_security": 0.2,
+    "authn_session": 0.2,
+    "business_logic": 0.3,
+    "graphql_security": 0.2,
+    "ssrf_cloud": 0.2,
+    "clientside_security": 0.2,
+    "llm_security": 0.3,
+    "secrets_cicd": 0.1,
 }
 
 

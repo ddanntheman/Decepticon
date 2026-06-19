@@ -152,7 +152,11 @@ decepticon-mcp = "decepticon.mcp_server.__main__:main"
 # images override via ``ENV DECEPTICON_PLUGINS=standard,saas``.
 
 [tool.decepticon.plugins]
-enabled = ["standard", "plugins"]
+# ``bounty`` is the fork-only appsec / bug-bounty specialist slate. It is
+# kept as its own opt-in bundle (and out of langgraph.json / STANDARD_GRAPHS)
+# so the ``standard`` bundle can still track upstream cleanly; this fork
+# ships it enabled. Override at runtime with DECEPTICON_PLUGINS.
+enabled = ["standard", "plugins", "bounty"]
 
 [project.entry-points."decepticon.subagents"]
 # Standard bundle — attached to the ``decepticon`` main agent.
@@ -179,6 +183,19 @@ detector = "decepticon.agents.plugins.detector:SUBAGENT_SPEC"
 verifier = "decepticon.agents.plugins.verifier:SUBAGENT_SPEC"
 patcher = "decepticon.agents.plugins.patcher:SUBAGENT_SPEC"
 exploiter = "decepticon.agents.plugins.exploiter:SUBAGENT_SPEC"
+# Bounty bundle (fork-only) — appsec / bug-bounty slate, attached to the
+# ``decepticon`` main agent. Kept out of langgraph.json so the standard
+# bundle stays upstream-syncable; opt-in via [tool.decepticon.plugins].
+asvs = "decepticon.agents.bounty.asvs:SUBAGENT_SPEC"
+mitre_attack = "decepticon.agents.bounty.mitre_attack:SUBAGENT_SPEC"
+api_security = "decepticon.agents.bounty.api_security:SUBAGENT_SPEC"
+authn_session = "decepticon.agents.bounty.authn_session:SUBAGENT_SPEC"
+business_logic = "decepticon.agents.bounty.business_logic:SUBAGENT_SPEC"
+graphql_security = "decepticon.agents.bounty.graphql_security:SUBAGENT_SPEC"
+ssrf_cloud = "decepticon.agents.bounty.ssrf_cloud:SUBAGENT_SPEC"
+clientside_security = "decepticon.agents.bounty.clientside_security:SUBAGENT_SPEC"
+llm_security = "decepticon.agents.bounty.llm_security:SUBAGENT_SPEC"
+secrets_cicd = "decepticon.agents.bounty.secrets_cicd:SUBAGENT_SPEC"
 
 [project.urls]
 Homepage = "https://github.com/PurpleAILAB/Decepticon"

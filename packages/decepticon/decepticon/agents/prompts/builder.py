@@ -53,6 +53,7 @@ _PROMPT_SEARCH_PATHS: tuple[Path, ...] = (
     _PROMPTS_DIR,
     _PROMPTS_DIR / "standard",
     _PROMPTS_DIR / "plugins",
+    _PROMPTS_DIR / "bounty",
 )
 
 # ── Cache boundary marker ────────────────────────────────────────────────────
@@ -207,6 +208,23 @@ _OPERATIONAL_ROLES = {
     "contract_auditor",
     "cloud_hunter",
     "ad_operator",
+    # Bounty bundle (fork-only) — every appsec / bug-bounty specialist is
+    # an operational hunter that produces findings, so each gets the
+    # faithful-reporting + verification-gate + finding-protocol +
+    # output-discipline cross-cutting prompts. This is load-bearing for the
+    # bug-bounty workflow: no finding is claimed without passing the
+    # verification gate, which keeps triage-rejected hypotheses out of
+    # HackerOne / Bugcrowd submissions.
+    "asvs",
+    "mitre_attack",
+    "api_security",
+    "authn_session",
+    "business_logic",
+    "graphql_security",
+    "ssrf_cloud",
+    "clientside_security",
+    "llm_security",
+    "secrets_cicd",
 }
 
 
