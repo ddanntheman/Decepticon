@@ -121,9 +121,11 @@ class TestPhaseForRoleMapping:
             "soundwave",
             "decepticon",
         }
-        # Fork-only ``bounty`` bundle — every appsec / bug-bounty specialist
-        # is phase-scoped too, so the map is the OSS roles plus these ten.
+        # Fork-only ``bounty`` bundle — the intake ``scout`` plus every
+        # appsec / bug-bounty specialist is phase-scoped too, so the map is
+        # the OSS roles plus these.
         bounty_roles = {
+            "scout",
             "asvs",
             "api_security",
             "authn_session",

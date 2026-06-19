@@ -70,6 +70,7 @@ PLUGIN_GRAPHS: dict[str, str] = {
 # own dict — and deliberately OUT of ``langgraph.json`` / ``STANDARD_GRAPHS`` —
 # so the standard bundle can still track upstream cleanly.
 BOUNTY_GRAPHS: dict[str, str] = {
+    "scout": "./decepticon/agents/bounty/scout.py:graph",
     "asvs": "./decepticon/agents/bounty/asvs.py:graph",
     "mitre_attack": "./decepticon/agents/bounty/mitre_attack.py:graph",
     "api_security": "./decepticon/agents/bounty/api_security.py:graph",

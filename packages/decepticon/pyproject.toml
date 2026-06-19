@@ -186,6 +186,8 @@ exploiter = "decepticon.agents.plugins.exploiter:SUBAGENT_SPEC"
 # Bounty bundle (fork-only) — appsec / bug-bounty slate, attached to the
 # ``decepticon`` main agent. Kept out of langgraph.json so the standard
 # bundle stays upstream-syncable; opt-in via [tool.decepticon.plugins].
+# ``scout`` is the intake agent (program selection → enforced scope).
+scout = "decepticon.agents.bounty.scout:SUBAGENT_SPEC"
 asvs = "decepticon.agents.bounty.asvs:SUBAGENT_SPEC"
 mitre_attack = "decepticon.agents.bounty.mitre_attack:SUBAGENT_SPEC"
 api_security = "decepticon.agents.bounty.api_security:SUBAGENT_SPEC"

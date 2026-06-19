@@ -541,6 +541,9 @@ AGENT_TIERS: dict[str, Tier] = {
     "authn_session": Tier.HIGH,
     "business_logic": Tier.HIGH,
     "ssrf_cloud": Tier.HIGH,
+    # ``scout`` runs the HITL intake flow (list/select/confirm/enforce) —
+    # MID is plenty for summarising programs and parsing policy.
+    "scout": Tier.MID,
     "asvs": Tier.MID,
     "mitre_attack": Tier.MID,
     "api_security": Tier.MID,
@@ -584,7 +587,9 @@ AGENT_TEMPERATURES: dict[str, float] = {
     "supply_chain_operator": 0.2,
     # Bounty bundle (fork-only). Low temperatures for deterministic
     # audit / enumeration; slightly higher where creative chaining helps
-    # (business-logic abuse, LLM prompt-injection).
+    # (business-logic abuse, LLM prompt-injection). ``scout`` drives the
+    # intake conversation, so a little flexibility helps.
+    "scout": 0.3,
     "asvs": 0.1,
     "mitre_attack": 0.2,
     "api_security": 0.2,
