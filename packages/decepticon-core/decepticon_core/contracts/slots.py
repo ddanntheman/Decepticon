@@ -224,6 +224,21 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
     "patcher": _BASH_AGENT_SLOTS,
     "scanner": _BASH_AGENT_SLOTS,
     "exploiter": _BASH_AGENT_SLOTS,
+    # ── Bounty bundle bash-executing specialists (fork-only appsec /
+    # bug-bounty slate). All ten are bash-driven, RoE-scoped, and
+    # HITL-gated — identical slot stack to the standard bash agents so
+    # they inherit ENGAGEMENT_CONTEXT (RoE scope injection),
+    # SANDBOX_NOTIFICATION, and HITL_APPROVAL. ──
+    "asvs": _BASH_AGENT_SLOTS,
+    "mitre_attack": _BASH_AGENT_SLOTS,
+    "api_security": _BASH_AGENT_SLOTS,
+    "authn_session": _BASH_AGENT_SLOTS,
+    "business_logic": _BASH_AGENT_SLOTS,
+    "graphql_security": _BASH_AGENT_SLOTS,
+    "ssrf_cloud": _BASH_AGENT_SLOTS,
+    "clientside_security": _BASH_AGENT_SLOTS,
+    "llm_security": _BASH_AGENT_SLOTS,
+    "secrets_cicd": _BASH_AGENT_SLOTS,
 }
 """Role → slot-set mapping. The assembler only walks slots present in
 the role's set; anything else is skipped silently. Plugin agents

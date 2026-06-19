@@ -63,15 +63,35 @@ PLUGIN_GRAPHS: dict[str, str] = {
     "exploiter": "./decepticon/agents/plugins/exploiter.py:graph",
 }
 
+# Bounty bundle — fork-only appsec / bug-bounty specialist slate. Opt-in via
+# ``DECEPTICON_PLUGINS=standard,plugins,bounty`` or
+# ``[plugins] enabled = ["standard", "plugins", "bounty"]`` in
+# ``.decepticon.toml`` (the fork ships it enabled in pyproject). Kept in its
+# own dict — and deliberately OUT of ``langgraph.json`` / ``STANDARD_GRAPHS`` —
+# so the standard bundle can still track upstream cleanly.
+BOUNTY_GRAPHS: dict[str, str] = {
+    "asvs": "./decepticon/agents/bounty/asvs.py:graph",
+    "mitre_attack": "./decepticon/agents/bounty/mitre_attack.py:graph",
+    "api_security": "./decepticon/agents/bounty/api_security.py:graph",
+    "authn_session": "./decepticon/agents/bounty/authn_session.py:graph",
+    "business_logic": "./decepticon/agents/bounty/business_logic.py:graph",
+    "graphql_security": "./decepticon/agents/bounty/graphql_security.py:graph",
+    "ssrf_cloud": "./decepticon/agents/bounty/ssrf_cloud.py:graph",
+    "clientside_security": "./decepticon/agents/bounty/clientside_security.py:graph",
+    "llm_security": "./decepticon/agents/bounty/llm_security.py:graph",
+    "secrets_cicd": "./decepticon/agents/bounty/secrets_cicd.py:graph",
+}
+
 # Mapping from bundle name to its graph dict — used by build_langserve_graphs.
 _BUNDLE_TO_GRAPHS: dict[str, dict[str, str]] = {
     "standard": STANDARD_GRAPHS,
     "plugins": PLUGIN_GRAPHS,
+    "bounty": BOUNTY_GRAPHS,
 }
 
 # Backward-compat alias — full unfiltered manifest (every OSS-shipped graph).
 # Prefer ``build_langserve_graphs()`` which respects DECEPTICON_PLUGINS.
-BUILTIN_GRAPHS: dict[str, str] = {**STANDARD_GRAPHS, **PLUGIN_GRAPHS}
+BUILTIN_GRAPHS: dict[str, str] = {**STANDARD_GRAPHS, **PLUGIN_GRAPHS, **BOUNTY_GRAPHS}
 
 
 def build_langserve_graphs() -> dict[str, str]:

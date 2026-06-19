@@ -37,14 +37,20 @@ decepticon-sdk = { workspace = true }
 # Project-level plugin activation, read by ``decepticon.plugin_loader``
 # from the CWD's pyproject.toml. Kept at the workspace root so the
 # in-checkout dev workflow (``make dev``, ``langgraph dev``,
-# ``make benchmark``) automatically activates both OSS bundles
-# without forcing every contributor to remember the env var.
+# ``make benchmark``) automatically activates the OSS bundles plus this
+# fork's ``bounty`` slate without forcing every contributor to remember
+# the env var.
 # OSS end-user installs that don't clone this repo fall back to the
 # hardcoded ``["standard"]`` default; SaaS Docker images override via
 # ``ENV DECEPTICON_PLUGINS=standard,saas``.
+#
+# ``bounty`` is this fork's appsec / bug-bounty specialist slate. It is a
+# separate opt-in bundle (and deliberately kept out of langgraph.json /
+# STANDARD_GRAPHS) so the ``standard`` bundle can still track upstream
+# cleanly. Override at runtime with ``DECEPTICON_PLUGINS``.
 
 [tool.decepticon.plugins]
-enabled = ["standard", "plugins"]
+enabled = ["standard", "plugins", "bounty"]
 
 [dependency-groups]
 dev = [
