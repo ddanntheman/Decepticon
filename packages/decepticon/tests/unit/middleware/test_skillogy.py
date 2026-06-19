@@ -100,7 +100,7 @@ class TestPhaseForRoleMapping:
     """
 
     def test_oss_standard_roles_mapped(self) -> None:
-        expected = {
+        oss_roles = {
             "recon",
             "exploit",
             "postexploit",
@@ -121,8 +121,22 @@ class TestPhaseForRoleMapping:
             "soundwave",
             "decepticon",
         }
-        assert set(_PHASE_FOR_ROLE) == expected, (
-            "OSS standard roles drifted from phase mapping — "
+        # Fork-only ``bounty`` bundle — every appsec / bug-bounty specialist
+        # is phase-scoped too, so the map is the OSS roles plus these ten.
+        bounty_roles = {
+            "asvs",
+            "api_security",
+            "authn_session",
+            "business_logic",
+            "graphql_security",
+            "ssrf_cloud",
+            "clientside_security",
+            "mitre_attack",
+            "llm_security",
+            "secrets_cicd",
+        }
+        assert set(_PHASE_FOR_ROLE) == oss_roles | bounty_roles, (
+            "roles drifted from phase mapping — "
             "update _PHASE_FOR_ROLE when adding/removing a specialist"
         )
 

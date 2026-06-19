@@ -100,10 +100,10 @@ def build_bounty_tools(role: str, domain_tools: Sequence[Any]) -> list[Any]:
     standard: dict[str, Any] = {
         t.name: t
         for t in [
-            *domain_tools,
             *_BOUNTY_WORKFLOW_TOOLS,
             *_REFERENCE_TOOLS,
             *BASH_TOOLS,
+            *domain_tools,
         ]
     }
     return build_tools(role=role, standard_tools=standard)

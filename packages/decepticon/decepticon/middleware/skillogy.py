@@ -128,6 +128,20 @@ _PHASE_FOR_ROLE: dict[str, str] = {
     "blue_cell": "adversary-emulation",
     "soundwave": "planning",
     "decepticon": "orchestration",
+    # Bounty bundle (fork-only) — phase-scope each appsec / bug-bounty
+    # specialist so it gets the per-phase MoC summary under Skillogy.
+    # Phases below are all seeded ``:Phase`` nodes and match each role's
+    # skill subdomain.
+    "asvs": "web-exploitation",
+    "api_security": "web-exploitation",
+    "authn_session": "web-exploitation",
+    "business_logic": "web-exploitation",
+    "graphql_security": "web-exploitation",
+    "ssrf_cloud": "web-exploitation",
+    "clientside_security": "web-exploitation",
+    "mitre_attack": "adversary-emulation",
+    "llm_security": "ai-security",
+    "secrets_cicd": "supply-chain",
 }
 
 
