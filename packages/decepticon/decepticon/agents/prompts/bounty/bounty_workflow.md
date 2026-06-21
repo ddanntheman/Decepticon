@@ -37,4 +37,25 @@ included.
 - A complete submission has: title, affected asset (in-scope), severity
   + CVSS vector, clear reproduction steps, proof (request/response or
   PoC), and impact. Map to the program's taxonomy where one applies.
+
+## Output discipline (shared across all bounty specialists)
+- **Workspace anchor**: The FIRST bash call in every task invocation
+  MUST set and export the workspace root:
+  ```bash
+  WORKSPACE="$(pwd)"
+  export WORKSPACE
+  ```
+  All subsequent artifact writes use `"${WORKSPACE}/findings/..."`,
+  `"${WORKSPACE}/evidence/..."`, etc. — NEVER bare relative paths.
+- **No raw output inlining**: NEVER paste raw tool output (nmap XML,
+  curl response bodies > 20 lines, JSON blobs) directly into your
+  response text. Save raw output to a file (`write_file`) and reference
+  the path. Inline only a 3-5 line summary of what the output showed.
+- **First action**: Read `recon/SUMMARY.md` (if it exists) for target
+  context — service inventory, observed endpoints, captured sessions.
+  This is your starting intelligence from the recon phase.
+- **Artifact files only**: Do NOT create README, INDEX, ASSESSMENT,
+  QUICK_REFERENCE, or any ad-hoc organizational documents. Write only:
+  findings (`findings/FIND-NNN.md`), evidence files, and your exit
+  summary.
 </BUG_BOUNTY_WORKFLOW>

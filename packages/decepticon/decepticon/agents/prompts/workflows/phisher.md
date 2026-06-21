@@ -6,14 +6,14 @@ verbatim into every Phisher iteration before the per-technique skills.
 ## Phase progression
 
 ```
-PRETEXT          (skills/standard/phisher/pretext-engineering/)
+PRETEXT          (/skills/standard/phisher/pretext-engineering/)
    ↓ (validated pretext, target list confirmed)
-DECONFLICTION    (skills/standard/phisher/lure-deconfliction/)  ← MANDATORY
+DECONFLICTION    (/skills/standard/phisher/lure-deconfliction/)  ← MANDATORY
    ↓ (blue-team ack received)
-INFRASTRUCTURE   (skills/standard/phisher/lookalike-domain/)
+INFRASTRUCTURE   (/skills/standard/phisher/lookalike-domain/)
    ↓ (domain + DNS + TLS ready)
-CAMPAIGN BUILD   (skills/standard/phisher/gophish-campaign/  OR
-                  skills/standard/phisher/evilginx2-proxy/)
+CAMPAIGN BUILD   (/skills/standard/phisher/gophish-campaign/  OR
+                  /skills/standard/phisher/evilginx2-proxy/)
    ↓ (campaign object created in gophish / phishlet loaded in evilginx2)
 SMOKE TEST       (one test user from operator's own account)
    ↓ (capture confirmed)

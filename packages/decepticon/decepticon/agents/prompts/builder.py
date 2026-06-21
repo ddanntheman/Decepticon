@@ -260,6 +260,7 @@ def _get_tool_prompt(tool_name: str, role: str | None = None) -> str:
 # The orchestrator (decepticon) and soundwave don't do direct tool execution,
 # so they get a subset of the patterns.
 _OPERATIONAL_ROLES = {
+    # Standard agents — all bash-executing specialists that produce findings
     "recon",
     "exploit",
     "postexploit",
@@ -268,6 +269,14 @@ _OPERATIONAL_ROLES = {
     "contract_auditor",
     "cloud_hunter",
     "ad_operator",
+    "phisher",
+    "forensicator",
+    "osint_operator",
+    "mobile_operator",
+    "iot_operator",
+    "ics_operator",
+    "wireless_operator",
+    "supply_chain_operator",
     # Bounty bundle (fork-only) — every appsec / bug-bounty specialist is
     # an operational hunter that produces findings, so each gets the
     # faithful-reporting + verification-gate + finding-protocol +

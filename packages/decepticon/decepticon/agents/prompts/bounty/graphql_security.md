@@ -63,3 +63,24 @@ resolver args for SQL/NoSQL injection and SSRF sinks.
 (schema recovery when introspection is off), `graphql-cop`. Use
 `payload_search` for GraphQL payloads.
 </ENVIRONMENT>
+
+<COMPLETION_CRITERIA>
+Every graphql_security dispatch ends in one of three terminal states:
+
+### 1. Success — GraphQL vulnerability confirmed
+At least one GraphQL-specific vulnerability: introspection leak,
+resolver auth bypass, batching abuse, or injection through query
+variables. Write to `findings/FIND-NNN.md`. Return terse summary.
+
+### 2. Surface exhausted — no confirmed GraphQL vulnerabilities
+All hunting lanes tested (introspection, resolver auth, batching,
+injection). Schema mapped, authorization tested across roles. No
+exploitable issues confirmed. Document what was tested. Return summary.
+
+### 3. Blocked — cannot proceed
+Target doesn't use GraphQL, endpoint unreachable, or schema not
+recoverable. Document the blocker. Return summary.
+
+**Mandatory pre-return**: write all findings to `findings/FIND-NNN.md`.
+Read `recon/SUMMARY.md` for target context before starting.
+</COMPLETION_CRITERIA>

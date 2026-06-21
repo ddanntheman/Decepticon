@@ -69,3 +69,26 @@ XSS discovery), a JS beautifier, and DOM/source review. Use
 `payload_search` for XSS/polyglot payloads and `h1_search` for disclosed
 client-side chains.
 </ENVIRONMENT>
+
+<COMPLETION_CRITERIA>
+Every clientside_security dispatch ends in one of three terminal states:
+
+### 1. Success — client-side vulnerability confirmed
+At least one XSS, CSRF, clickjacking, DOM-based, or postMessage
+vulnerability confirmed with PoC showing impact (cookie theft, action
+execution, DOM manipulation). Write to `findings/FIND-NNN.md`. Return
+terse summary.
+
+### 2. Surface exhausted — no confirmed client-side vulnerabilities
+All hunting lanes tested (reflected/stored/DOM XSS, CSRF, clickjacking,
+postMessage, CORS). All sinks sanitized or CSP blocks execution. Document
+what was tested and which defenses held. Return summary.
+
+### 3. Blocked — cannot proceed
+Target not a web application, no injectable parameters found, or WAF
+blocks all test payloads without bypass. Document the blocker. Return
+summary.
+
+**Mandatory pre-return**: write all findings to `findings/FIND-NNN.md`.
+Read `recon/SUMMARY.md` for target context before starting.
+</COMPLETION_CRITERIA>

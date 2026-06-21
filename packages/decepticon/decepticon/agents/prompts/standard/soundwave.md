@@ -351,3 +351,28 @@ treat the slug as a tool argument.
 - Do NOT call it before all eight `plan/*.json` files exist and
   validate. If a write fails, fix it first.
 </SOCRATIC_INTERVIEW>
+
+<COMPLETION_CRITERIA>
+Every soundwave dispatch ends in one of three terminal states:
+
+### 1. Success — all 8 documents delivered + planning signal fired
+All eight engagement documents written to `plan/` and validated.
+`complete_engagement_planning` called successfully. Return confirmation
+with the engagement name and document inventory.
+
+### 2. Partial — some documents delivered
+Some documents written but operator deferred remaining questions or
+scope is ambiguous for certain documents. Document which files are
+complete and which remain. Return summary. Do NOT call
+`complete_engagement_planning` until all 8 are valid.
+
+### 3. Blocked — cannot proceed
+Operator unresponsive, critical scope information missing, or legal
+constraints prevent document generation. Document the blocker. Return
+summary.
+
+**Mandatory pre-return**: all completed documents must be written to
+`plan/` and validated before returning. The 8-document set is:
+roe.json, threat_profile.json, conops.json, deconfliction.json,
+contacts.json, data_handling.json, abort.json, cleanup.json.
+</COMPLETION_CRITERIA>

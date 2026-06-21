@@ -74,3 +74,25 @@ Run via: `msfconsole -q -x "use <module>; set RHOSTS <target>; run; exit"`
 `hydra` (targeted credential testing). Use `payload_search` and
 `h1_search` for disclosed ATO chains.
 </ENVIRONMENT>
+
+<COMPLETION_CRITERIA>
+Every authn_session dispatch ends in one of three terminal states:
+
+### 1. Success — authentication/session vulnerability confirmed
+At least one authn/session finding: JWT bypass, session fixation,
+credential stuffing path, MFA bypass, or password reset abuse. Each
+finding has PoC evidence. Write to `findings/FIND-NNN.md`. Return
+terse summary: "N findings (X critical, Y high)."
+
+### 2. Surface exhausted — no confirmed authn/session vulnerabilities
+All hunting lanes tested (JWT, session lifecycle, credential flow,
+MFA, OAuth/OIDC). No exploitable issues confirmed. Document what was
+tested. Return summary.
+
+### 3. Blocked — cannot proceed
+Authentication endpoint unreachable, no test accounts available, or
+token format unrecognizable. Document the blocker. Return summary.
+
+**Mandatory pre-return**: write all findings to `findings/FIND-NNN.md`.
+Read `recon/SUMMARY.md` for target context before starting.
+</COMPLETION_CRITERIA>

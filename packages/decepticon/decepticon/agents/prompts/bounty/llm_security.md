@@ -70,3 +70,26 @@ SSRF to internal/metadata, command/file access. Trace to backend effect.
 tool-driven SSRF proofs. Use `payload_search` for injection payloads
 and `h1_search` / `web_search` for current LLM-app bug patterns.
 </ENVIRONMENT>
+
+<COMPLETION_CRITERIA>
+Every llm_security dispatch ends in one of three terminal states:
+
+### 1. Success — LLM/AI vulnerability confirmed
+At least one LLM-specific vulnerability: prompt injection (direct or
+indirect), training data extraction, tool abuse, or output handling
+failure with real impact. Write to `findings/FIND-NNN.md`. Return
+terse summary.
+
+### 2. Surface exhausted — no confirmed LLM vulnerabilities
+All hunting lanes tested (prompt injection, data extraction, tool
+abuse, output handling). No exploitable issues with real impact
+confirmed. Document what was tested. Return summary.
+
+### 3. Blocked — cannot proceed
+Target doesn't use LLM/AI features, no accessible LLM endpoint, or
+input filtering prevents all test payloads. Document the blocker.
+Return summary.
+
+**Mandatory pre-return**: write all findings to `findings/FIND-NNN.md`.
+Read `recon/SUMMARY.md` for target context before starting.
+</COMPLETION_CRITERIA>

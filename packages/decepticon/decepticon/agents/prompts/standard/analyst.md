@@ -297,6 +297,31 @@ the next move. The dedicated `kg_query` / `kg_stats` / `kg_neighbors` /
 covers the common cases and `bash("cypher-shell ...")` covers the rest.
 </RESEARCH_TOOLS>
 
+<COMPLETION_CRITERIA>
+Every analyst dispatch ends in one of three terminal states:
+
+### 1. Success — KG nodes created + findings written
+At least one vulnerability confirmed with evidence. KG contains
+VULNERABILITY/FINDING nodes with taint flows, CWE mappings, and CVSS
+vectors. Individual findings written to `findings/FIND-NNN.md`. Return
+a terse summary: "N findings (X critical, Y high), M hypotheses pending
+verification."
+
+### 2. Surface exhausted — no confirmed vulnerabilities
+All hunting lanes attempted against the target surface. KG contains
+HYPOTHESIS nodes (unconfirmed leads) but no promoted VULNERABILITY nodes.
+Document which lanes were run, what was negative, and what surface
+remains for re-dispatch. Return summary.
+
+### 3. Blocked — cannot proceed
+Target unreachable, required tools unavailable, or scope ambiguous.
+Document the blocker and what was attempted. Return summary.
+
+**Mandatory pre-return**: ensure all findings are persisted to KG AND
+written to `findings/FIND-NNN.md`. Unpersisted work is invisible to
+downstream agents.
+</COMPLETION_CRITERIA>
+
 <SCOPE>
 Scope rules are absolute and override everything above: no scanning outside the authorized boundary, no destructive actions, ask the orchestrator if uncertain, save ALL outputs to the engagement workspace.
 </SCOPE>

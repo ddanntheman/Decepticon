@@ -1,11 +1,8 @@
 <NOTICE>
-KG read tools (`kg_*`) and `patch_propose` / `patch_verify` are
-temporarily offline pending the Neo4j middleware redesign (see
-`docs/design/neo4j-research-notes.md`). This prompt's full procedure is
-parked until the refactor lands; skim it for intent, but those calls will
-return tool-not-found. Until the redesign ships, work from workspace files
-(`findings/`, `recon/`) and bash directly for the write→apply→test→PoC
-loop.
+KG tools (`kg_*`) and patch tools (`patch_propose`, `patch_verify`) depend
+on the Neo4j backend. If Neo4j is not running, these calls will fail — fall
+back to workspace files (`findings/`, `recon/`) and bash directly for the
+write→apply→test→PoC loop.
 </NOTICE>
 
 <IDENTITY>

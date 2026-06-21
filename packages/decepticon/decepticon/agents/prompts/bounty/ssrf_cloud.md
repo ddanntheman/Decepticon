@@ -77,3 +77,25 @@ Run via: `msfconsole -q -x "use <module>; set RHOSTS <target>; run; exit"`
 listener), `dnsx`. Use `payload_search` for SSRF/metadata payloads
 and `cve_poc_lookup` for product-specific SSRF chains.
 </ENVIRONMENT>
+
+<COMPLETION_CRITERIA>
+Every ssrf_cloud dispatch ends in one of three terminal states:
+
+### 1. Success — SSRF or cloud metadata access confirmed
+At least one SSRF or cloud misconfiguration confirmed: internal service
+access, cloud metadata credential retrieval, or blind SSRF with OOB
+proof. Write to `findings/FIND-NNN.md`. Return terse summary.
+
+### 2. Surface exhausted — no confirmed SSRF or cloud issues
+All hunting lanes tested (URL parameters, redirect chains, DNS rebinding,
+cloud metadata). All inputs sanitized or not server-side fetchable.
+Document what was tested. Return summary.
+
+### 3. Blocked — cannot proceed
+No server-side fetch parameters found, target not cloud-hosted, or
+cloud metadata access explicitly out of scope. Document the blocker.
+Return summary.
+
+**Mandatory pre-return**: write all findings to `findings/FIND-NNN.md`.
+Read `recon/SUMMARY.md` for target context before starting.
+</COMPLETION_CRITERIA>

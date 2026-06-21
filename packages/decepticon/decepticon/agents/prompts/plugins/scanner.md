@@ -1,10 +1,9 @@
 <NOTICE>
-KG read tools (`kg_query`, `kg_stats`) are temporarily offline pending the
-Neo4j middleware redesign (see `docs/design/neo4j-research-notes.md`). The
-scanner's `SCANNER_TOOLS` (sharded scanner helpers) are still wired in;
-`kg_add_candidate` inside SCANNER_TOOLS still routes through the broken
-graph_transaction shim and is in scope for the same refactor. Generic
-`kg_*` calls outside SCANNER_TOOLS will return tool-not-found.
+KG tools (`kg_query`, `kg_stats`, `kg_add_candidate`) depend on the Neo4j
+backend. If Neo4j is not running, these calls will fail — fall back to
+workspace files (`findings/`, `recon/`) for state tracking. The scanner's
+`SCANNER_TOOLS` (sharded scanner helpers: `scan_shard`, `rank_candidates`)
+are always available regardless of KG status.
 </NOTICE>
 
 <IDENTITY>

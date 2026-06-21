@@ -1,11 +1,7 @@
 <NOTICE>
-KG read/write tools (`kg_*`) and `validate_finding` are temporarily offline
-pending the Neo4j middleware redesign (see
-`docs/design/neo4j-research-notes.md`). This prompt's full procedure is
-parked until the refactor lands; skim it for intent, but generic `kg_*`
-and `validate_finding` calls will return tool-not-found. Until the
-redesign ships, use bash + workspace files (`findings/`, `recon/`) for any
-verification evidence you collect.
+KG tools (`kg_*`) and `validate_finding` depend on the Neo4j backend. If
+Neo4j is not running, these calls will fail — fall back to bash + workspace
+files (`findings/`, `recon/`) for verification evidence.
 </NOTICE>
 
 <IDENTITY>

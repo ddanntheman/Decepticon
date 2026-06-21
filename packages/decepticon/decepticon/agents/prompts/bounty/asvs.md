@@ -91,3 +91,24 @@ Run via: `msfconsole -q -x "use <module>; set RHOSTS <target>; run; exit"`
 - `nuclei` — templated checks for common ASVS-adjacent misconfigs
 - `jq` — JSON response inspection
 </ENVIRONMENT>
+
+<COMPLETION_CRITERIA>
+Every asvs dispatch ends in one of three terminal states:
+
+### 1. Success — ASVS requirements mapped with verdicts
+Requirements assessed against target with pass/fail/N-A verdicts. At
+least one failing requirement confirmed with evidence. Write findings
+to `findings/FIND-NNN.md`. Return terse summary: "N/M requirements
+assessed, X failures (Y critical/high)."
+
+### 2. Surface exhausted — all assessed requirements pass
+All applicable ASVS requirements tested. No failures confirmed. Document
+which requirements were assessed and which were N/A. Return summary.
+
+### 3. Blocked — cannot proceed
+Target unreachable, ASVS chapter not applicable to target type, or
+required tools unavailable. Document the blocker. Return summary.
+
+**Mandatory pre-return**: write all findings to `findings/FIND-NNN.md`.
+Read `recon/SUMMARY.md` for target context before starting.
+</COMPLETION_CRITERIA>

@@ -68,3 +68,25 @@ and map what in-scope access/impact it yields.
 `trufflehog`, `gitleaks`, `git-dumper`, `curl`/`ffuf` (exposed-path
 discovery). Use `h1_search` for disclosed secret-leak chains.
 </ENVIRONMENT>
+
+<COMPLETION_CRITERIA>
+Every secrets_cicd dispatch ends in one of three terminal states:
+
+### 1. Success — secrets or CI/CD misconfiguration confirmed
+At least one finding: leaked API key/token (validated as active),
+exposed .env / credential file, CI/CD pipeline injection path, or
+secret in git history. Write to `findings/FIND-NNN.md` with validation
+evidence. Return terse summary.
+
+### 2. Surface exhausted — no confirmed secret leaks or CI/CD issues
+All hunting lanes tested (filesystem scan, git history, CI config audit,
+exposed paths). No active secrets or exploitable CI/CD misconfigs found.
+Document what was scanned. Return summary.
+
+### 3. Blocked — cannot proceed
+No git repository access, CI/CD configs not accessible, or filesystem
+not available. Document the blocker. Return summary.
+
+**Mandatory pre-return**: write all findings to `findings/FIND-NNN.md`.
+Read `recon/SUMMARY.md` for target context before starting.
+</COMPLETION_CRITERIA>

@@ -75,3 +75,26 @@ Run via: `msfconsole -q -x "use <module>; set RHOSTS <target>; run; exit"`
 diffing), `arjun` (param discovery). Use `payload_search` for class
 payloads and `h1_search` for disclosed API bug patterns.
 </ENVIRONMENT>
+
+<COMPLETION_CRITERIA>
+Every api_security dispatch ends in one of three terminal states:
+
+### 1. Success — validated API findings with PoC
+At least one API vulnerability confirmed: BOLA, BFLA, mass assignment,
+injection, or resource exhaustion. Each finding has a request/response
+PoC proving impact. Write findings to `findings/FIND-NNN.md`. Return
+terse summary: "N findings (X critical, Y high)."
+
+### 2. Surface exhausted — no confirmed API vulnerabilities
+All hunting lanes attempted (BOLA, injection, mass assignment,
+resource/inventory). Authorization model tested across roles. No
+exploitable issues confirmed. Document what was tested. Return summary.
+
+### 3. Blocked — cannot proceed
+API unreachable, no spec or traffic to analyze, or authentication
+tokens unavailable. Document the blocker. Return summary.
+
+**Mandatory pre-return**: write all findings to `findings/FIND-NNN.md`
+with PoC evidence. Read `recon/SUMMARY.md` for target context before
+starting.
+</COMPLETION_CRITERIA>
