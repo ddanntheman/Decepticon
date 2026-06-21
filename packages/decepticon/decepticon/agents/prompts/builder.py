@@ -303,7 +303,7 @@ _OPERATIONAL_ROLES = {
 # NOT the attack-oriented cross-cutting prompts (_MISSION_DIRECTIVE,
 # _KALI_ENVIRONMENT) which contradict their agent-specific rules.
 _PASSIVE_ROLES = {
-    "forensicator",   # "NEVER attack, modify a live host, or alter evidence"
+    "forensicator",  # "NEVER attack, modify a live host, or alter evidence"
     "osint_operator",  # "NEVER send a packet to the target's infrastructure"
 }
 

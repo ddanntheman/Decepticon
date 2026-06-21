@@ -267,6 +267,28 @@ def test_wrap_tool_call_rejects_kg_ingest_when_engagement_unset() -> None:
     assert isinstance(out, ToolMessage)
 
 
+def test_wrap_tool_call_falls_through_when_tool_call_id_missing() -> None:
+    """When tool_call_id can't be extracted, the middleware must NOT inject
+    a ToolMessage with a fabricated ID — that corrupts the message history
+    and causes downstream 400s. Instead it falls through to the handler."""
+    mw = _middleware()
+    # Request with no tool_call_id and no tool_call.id — simulates the
+    # edge case that caused the kg-middleware-rejection bug.
+    request = SimpleNamespace(
+        tool=SimpleNamespace(name="kg_record"),
+        state={},
+        tool_call=None,
+    )
+    captured: list[Any] = []
+    out = mw.wrap_tool_call(
+        request,
+        lambda req: captured.append(req) or "handler-result",
+    )
+    # Handler SHOULD be called (fall-through), not a ToolMessage rejection.
+    assert out == "handler-result"
+    assert len(captured) == 1
+
+
 def test_wrap_tool_call_allows_kg_tool_when_engagement_present() -> None:
     mw = _middleware()
     captured: list[Any] = []
