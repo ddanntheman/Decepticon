@@ -10,6 +10,13 @@ import {
   Key,
   FileWarning,
   Route,
+  Shield,
+  CheckCircle,
+  Crosshair,
+  Globe,
+  Lock,
+  Code,
+  Cpu,
 } from "lucide-react";
 
 const nodeConfig: Record<
@@ -24,6 +31,15 @@ const nodeConfig: Record<
   Credential: { color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30", icon: Key },
   Finding: { color: "text-pink-400", bg: "bg-pink-500/10 border-pink-500/30", icon: FileWarning },
   AttackPath: { color: "text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/30", icon: Route },
+  // Defense / Offensive Vaccine nodes
+  DefenseAction: { color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", icon: Shield },
+  DetectionFired: { color: "text-teal-400", bg: "bg-teal-500/10 border-teal-500/30", icon: Crosshair },
+  Verification: { color: "text-lime-400", bg: "bg-lime-500/10 border-lime-500/30", icon: CheckCircle },
+  // Additional infrastructure nodes
+  Domain: { color: "text-sky-400", bg: "bg-sky-500/10 border-sky-500/30", icon: Globe },
+  Secret: { color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/30", icon: Lock },
+  SourceFile: { color: "text-slate-400", bg: "bg-slate-500/10 border-slate-500/30", icon: Code },
+  Technology: { color: "text-indigo-400", bg: "bg-indigo-500/10 border-indigo-500/30", icon: Cpu },
 };
 
 const defaultConfig = {
