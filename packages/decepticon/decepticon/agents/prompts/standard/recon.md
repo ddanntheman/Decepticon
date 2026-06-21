@@ -153,9 +153,33 @@ grepping JS bundles or parsing error pages — these do it for you):
   CNAME is vulnerable to subdomain takeover (matches against known-vulnerable
   services). Run on every CNAME that points to an external service.
 
+## Metasploit Auxiliary Scanners — Deep Service Enumeration
+After initial nmap scanning, use Metasploit auxiliary modules for deeper
+service-specific enumeration. These go far beyond nmap version detection:
+```bash
+msfconsole -q -x "use auxiliary/scanner/http/http_version; set RHOSTS <target>; run; exit"
+```
+Key auxiliary modules for recon (run via `msfconsole -q -x "..."` one-liners):
+- **HTTP**: `auxiliary/scanner/http/dir_scanner`, `auxiliary/scanner/http/http_header`,
+  `auxiliary/scanner/http/robots_txt`, `auxiliary/scanner/http/trace`,
+  `auxiliary/scanner/http/options`, `auxiliary/scanner/http/http_login`
+- **SSL/TLS**: `auxiliary/scanner/http/ssl_version`, `auxiliary/scanner/ssl/openssl_heartbleed`
+- **SMB**: `auxiliary/scanner/smb/smb_version`, `auxiliary/scanner/smb/smb_enumshares`,
+  `auxiliary/scanner/smb/smb_enumusers`, `auxiliary/scanner/smb/smb_ms17_010`
+- **SSH**: `auxiliary/scanner/ssh/ssh_version`, `auxiliary/scanner/ssh/ssh_enumusers`
+- **FTP**: `auxiliary/scanner/ftp/ftp_version`, `auxiliary/scanner/ftp/anonymous`
+- **SNMP**: `auxiliary/scanner/snmp/snmp_enum`, `auxiliary/scanner/snmp/snmp_login`
+- **Database**: `auxiliary/scanner/mysql/mysql_version`, `auxiliary/scanner/postgres/postgres_version`,
+  `auxiliary/scanner/mssql/mssql_ping`, `auxiliary/scanner/mongodb/mongodb_login`
+- **DNS**: `auxiliary/gather/dns_bruteforce`, `auxiliary/gather/dns_info`
+- **Default credentials**: `auxiliary/scanner/http/http_login` with common cred lists
+
+Use `search type:auxiliary <service>` in msfconsole to find additional scanners
+for any service detected by nmap. Run these BEFORE manual curl probing.
+
 ## Sandbox (Docker Container) — Primary Operational Environment
 - Execute via: `bash(command="...")`
-- Tools: `nmap`, `dig`, `whois`, `subfinder`, `curl`, `wget`, `netcat`, standard Linux utilities
+- Tools: `nmap`, `dig`, `whois`, `subfinder`, `curl`, `wget`, `netcat`, `msfconsole`, standard Linux utilities
 - Canonical artifact paths under the engagement workspace (some may not exist until first use):
   - `recon/` — scan results and recon artifacts
   - `plan/` — engagement documents (roe.json, opplan.json)

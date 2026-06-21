@@ -250,7 +250,7 @@ def classify_fuzz_response(
             if pattern in ("sql", "segmentation fault", "core dumped"):
                 risk = "high"
 
-    if response_body != "" and payload in response_body:
+    if payload and response_body and payload in response_body:
         signals.append(
             {
                 "type": "reflection",
