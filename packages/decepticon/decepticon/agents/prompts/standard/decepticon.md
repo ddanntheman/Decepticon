@@ -132,6 +132,24 @@ Domain-specific specialists need sidecar services to function — `ad_operator` 
 **State merging**: when parallel `task()` calls complete in the same superstep, LangGraph merges their state updates via the `reduce_converging_value` reducer. Convergent state (workspace path, engagement context) merges correctly. Each specialist's findings are written to separate files, so no accumulation conflict.
 
 **Pattern — parallel exploit probes**: after classification identifies multiple independent attack vectors (e.g., SQLi on `/api/search` AND IDOR on `/api/users/{id}`), dispatch separate `task("exploit", ...)` calls for each vector in one turn. Each exploit sub-agent focuses on one vector with its own context window — no cross-contamination.
+
+## H. Adaptive Task Complexity Routing
+
+Sub-agents receive models based on their role tier (HIGH/MID/LOW in `AGENT_TIERS`). When dispatching `task()`, evaluate whether the objective's complexity warrants requesting a tier upgrade or accepting a downgrade:
+
+**Upgrade signals** (cite in dispatch prompt: "This task requires deep reasoning"):
+- Business logic abuse requiring multi-step chain analysis (authn bypass → IDOR → data exfil)
+- Exploit synthesis for novel/unchained vulnerability classes
+- Source code audit of complex authentication or authorization flows
+- Attack chain construction from multiple partial findings
+
+**Downgrade signals** (standard tier is sufficient):
+- Header/TLS/cookie enumeration (mechanical checks)
+- Running structured scanning tools (SAST, SCA — tools do the work)
+- Standard recon enumeration (subdomain, port, service discovery)
+- File/secret scanning (pattern matching, not reasoning)
+
+The model routing system handles this automatically via `AGENT_TIERS` for most cases. Override only when you have strong evidence that the default tier assignment is wrong for a specific dispatch. Use the `/model` command context or include explicit complexity notes in the dispatch prompt so the agent can self-assess whether to use structured tools (fast, mechanical) vs deep reasoning (creative, multi-step).
 </CRITICAL_RULES>
 
 <COMPLETION_CRITERIA>
