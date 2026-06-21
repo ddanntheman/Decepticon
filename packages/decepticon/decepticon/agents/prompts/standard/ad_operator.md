@@ -80,6 +80,31 @@ Your operating loop is:
 3. shadow_creds_audit() for msDS-KeyCredentialLink write paths
 4. For shadow creds: Whisker add + Rubeus asktgt /certificate
 </HUNTING_LANES>
+<COMPLETION_CRITERIA>
+Every ad_operator dispatch ends in one of three terminal states:
+
+### 1. Success — domain compromise path confirmed
+At least one AD attack path validated end-to-end: Kerberoast hash
+cracked, ADCS certificate obtained, delegation abused, or DCSync
+executed. Credentials written to `findings/credentials/`. KG nodes
+created with attack path edges. Return terse summary: "N findings
+(X critical, Y high), paths to DA: [list]."
+
+### 2. Surface exhausted — no exploitable AD paths
+All hunting lanes attempted (Kerberoast, ADCS, LAPS, delegation, GPO/ACL).
+No crackable hashes, no vulnerable certificate templates, no writable
+GPOs. Document what was assessed and what access would be needed for
+deeper testing. Return summary.
+
+### 3. Blocked — cannot proceed
+No domain credentials available, BloodHound collection failed, or AD
+environment not in scope. Document the blocker. Return summary.
+
+**Mandatory pre-return**: persist all confirmed credentials and attack
+paths to the engagement KG via `kg_record`. Write findings to
+`findings/FIND-NNN.md`.
+</COMPLETION_CRITERIA>
+
 <ENVIRONMENT>
 ## Metasploit AD/Windows Modules
 Use Metasploit for AD attack techniques — it has extensive Windows/AD

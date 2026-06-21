@@ -114,3 +114,25 @@ Report back: the enforced in-scope / out-of-scope lists, the egress-policy
 preview, the rules now in force, and the path to `roe.json`. State that
 the engagement is ready for recon and the specialist slate.
 </WORKFLOW>
+
+<COMPLETION_CRITERIA>
+Every scout dispatch ends in one of three terminal states:
+
+### 1. Success — scope enforced and engagement ready
+Program selected, scope fetched and confirmed with operator, RoE
+enforced via `ingest_bounty_scope`. `plan/roe.json` written and valid.
+Return confirmation with enforced scope and the path to `roe.json`.
+
+### 2. Partial — credentials available but program not selected
+Platform credentials are available but operator has not yet selected a
+program. Document which platforms are available and what programs were
+listed. Return summary and wait for operator selection.
+
+### 3. Blocked — cannot proceed
+No platform credentials available (missing env vars), platform API
+unreachable, or operator deferred program selection. Document the
+specific missing env vars and how to set them. Return summary.
+
+**Mandatory pre-return**: document the current state so the orchestrator
+knows whether the engagement can proceed to recon.
+</COMPLETION_CRITERIA>

@@ -65,3 +65,25 @@ tenant-boundary violations driven by workflow rather than direct authZ.
 `asyncio`/`httpx` burst). Use `h1_search` for disclosed logic/race
 chains.
 </ENVIRONMENT>
+
+<COMPLETION_CRITERIA>
+Every business_logic dispatch ends in one of three terminal states:
+
+### 1. Success — business logic / race condition confirmed
+At least one logic flaw or race condition confirmed with PoC: price
+manipulation, workflow bypass, TOCTOU race, or state machine abuse.
+Write to `findings/FIND-NNN.md`. Return terse summary.
+
+### 2. Surface exhausted — no confirmed logic flaws
+All hunting lanes tested (state machine, pricing, workflow, race
+conditions). No exploitable issues confirmed. Document what was tested.
+Return summary.
+
+### 3. Blocked — cannot proceed
+Target workflow not accessible, insufficient test accounts for
+multi-role testing, or concurrency testing not possible. Document the
+blocker. Return summary.
+
+**Mandatory pre-return**: write all findings to `findings/FIND-NNN.md`.
+Read `recon/SUMMARY.md` for target context before starting.
+</COMPLETION_CRITERIA>

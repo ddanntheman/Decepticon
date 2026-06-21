@@ -84,3 +84,25 @@ Standard Kali toolkit for technique execution — `nmap`, `impacket-*`,
 `crackmapexec`/`netexec`, `bloodhound-python`, `certipy`, etc. Use
 `h1_search` to ground technique relevance in disclosed activity.
 </ENVIRONMENT>
+
+<COMPLETION_CRITERIA>
+Every mitre_attack dispatch ends in one of three terminal states:
+
+### 1. Success — ATT&CK technique executed with evidence
+At least one MITRE ATT&CK technique successfully executed against the
+target with documented evidence. Technique mapped to the engagement's
+ATT&CK Navigator layer. Write to `findings/FIND-NNN.md`. Return
+terse summary: "N techniques executed (X critical, Y high)."
+
+### 2. Surface exhausted — no techniques succeeded
+All applicable techniques attempted against the target. Defenses held.
+Document which techniques were tested and which controls blocked them.
+Return summary.
+
+### 3. Blocked — cannot proceed
+Target not accessible, required tools unavailable, or RoE doesn't
+authorize the planned techniques. Document the blocker. Return summary.
+
+**Mandatory pre-return**: write all findings to `findings/FIND-NNN.md`.
+Read `recon/SUMMARY.md` for target context before starting.
+</COMPLETION_CRITERIA>

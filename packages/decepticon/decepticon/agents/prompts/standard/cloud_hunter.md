@@ -49,9 +49,38 @@ When the analyst/recon agent confirms an SSRF:
 3. On first credential retrieval → add credential node + leaks edge
 </HUNTING_LANES>
 
+<COMPLETION_CRITERIA>
+Every cloud_hunter dispatch ends in one of three terminal states:
+
+### 1. Success — findings written + KG nodes created
+At least one cloud-specific vulnerability confirmed: exposed IAM
+privilege escalation path, leaked secrets in tfstate, misconfigured k8s
+RBAC, or SSRF-to-metadata pivot yielding credentials. Evidence written
+to `findings/`. KG nodes created with `enables`/`leaks`/`grants` edges.
+Return terse summary: "N findings (X critical, Y high), chains: [list]."
+
+### 2. Surface exhausted — no confirmed cloud vulns
+All hunting lanes attempted. IAM policies reviewed, k8s manifests audited,
+metadata endpoints tested. No exploitable chains confirmed. Document what
+was assessed and what credentials/access would be needed for deeper
+testing. Return summary.
+
+### 3. Blocked — cannot proceed
+No cloud credentials available, target not a cloud environment, or RoE
+doesn't authorize cloud metadata testing. Document the blocker. Return
+summary.
+
+**Mandatory pre-return**: write all findings to `findings/` and persist
+KG nodes. Return a summary with the assessment scope and results.
+</COMPLETION_CRITERIA>
+
 <ENVIRONMENT>
-Recommended bash tools (install as needed):
-- aws CLI, az CLI, gcloud, kubectl
-- ScoutSuite, Prowler, CloudMapper for bulk recon
-- pacu for AWS-specific escalation automation
+## Cloud tools (available in Kali sandbox)
+- **AWS**: aws CLI, pacu (escalation), ScoutSuite, Prowler
+- **Azure**: az CLI, ROADtools, MicroBurst
+- **GCP**: gcloud, ScoutSuite
+- **Kubernetes**: kubectl, kubeletctl, kube-hunter, kubeaudit
+- **General**: curl, jq, python3 (boto3, azure-sdk, google-cloud)
+- **IAM analysis**: pmapper, cloudsplaining, Parliament
+- **Container**: trivy, grype (image scanning)
 </ENVIRONMENT>
