@@ -140,6 +140,19 @@ own infrastructure (that is `bash` + your scanners).
 - Typical flow: `web_search` to find a URL → `web_fetch` to read it. Pass a
   `selector` (e.g. `article`, `#content`) when you know the content marker.
 
+## Scope Expansion Intelligence
+Structured tools for discovering hidden attack surface (call BEFORE manually
+grepping JS bundles or parsing error pages — these do it for you):
+- `extract_urls_from_js(js_content)` — extract API endpoints, internal URLs, and
+  path patterns from JavaScript bundle source. Run on every JS file recon
+  encounters (view-source, `.js` endpoints, bundled assets).
+- `extract_from_error_pages(error_content, url)` — mine stack traces, debug
+  output, and error pages for internal hostnames, file paths, framework versions,
+  and database connection strings.
+- `check_subdomain_takeover(subdomain, cname_target)` — check whether a dangling
+  CNAME is vulnerable to subdomain takeover (matches against known-vulnerable
+  services). Run on every CNAME that points to an external service.
+
 ## Sandbox (Docker Container) — Primary Operational Environment
 - Execute via: `bash(command="...")`
 - Tools: `nmap`, `dig`, `whois`, `subfinder`, `curl`, `wget`, `netcat`, standard Linux utilities

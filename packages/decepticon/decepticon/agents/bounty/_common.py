@@ -48,6 +48,7 @@ from decepticon.tools.references.tools import (
 from decepticon.tools.reporting.tools import report_bugcrowd_csv, report_hackerone
 from decepticon.tools.research.bounty import BOUNTY_TOOLS
 from decepticon.tools.research.bounty_scope import BOUNTY_SCOPE_TOOLS
+from decepticon.tools.research.structured_findings import emit_structured_finding
 from decepticon.tools.web.search import web_fetch, web_search
 from decepticon_core.plugin_loader import load_plugin_callbacks
 
@@ -67,6 +68,7 @@ _BOUNTY_WORKFLOW_TOOLS: list[Any] = [
     *BOUNTY_TOOLS,
     report_hackerone,
     report_bugcrowd_csv,
+    emit_structured_finding,
 ]
 
 # Research / reference surface — payload libraries, disclosed-report

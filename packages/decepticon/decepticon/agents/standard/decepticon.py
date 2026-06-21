@@ -18,9 +18,11 @@ Middleware stack (selected for orchestration):
   9. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic models
   10. PatchToolCallsMiddleware — repair dangling tool calls
 
-The orchestrator has tools=[] — all offensive work goes through task()
-delegation to specialist sub-agents. SandboxNotificationMiddleware lives
-on each sub-agent (where bash actually runs), not here.
+The orchestrator carries engagement-level intelligence tools (cross-session
+memory, OSINT feeds, consensus validation, structured export, vaccine loop,
+CART scheduling) directly — these are coordination concerns that span
+sub-agent lifetimes. All offensive work still goes through task() delegation;
+SandboxNotificationMiddleware lives on each sub-agent (where bash runs).
 
 Library API
 -----------
@@ -64,6 +66,12 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
+from decepticon.tools.defense.vaccine import VACCINE_TOOLS
+from decepticon.tools.research.cart import CART_TOOLS
+from decepticon.tools.research.consensus import CONSENSUS_TOOLS
+from decepticon.tools.research.engagement_intel import ENGAGEMENT_INTEL_TOOLS
+from decepticon.tools.research.structured_findings import STRUCTURED_FINDING_TOOLS
+from decepticon.tools.research.tools import allocate_finding_id
 from decepticon_core.plugin_loader import (
     is_bundle_enabled,
     load_plugin_callbacks,
@@ -153,18 +161,31 @@ def create_decepticon_agent(
         ]
 
     if tools is None:
-        # The orchestrator's domain tools are ``{}`` — all offensive
-        # work goes through ``task()`` to a specialist. The exception
-        # is ADR-0006 ``ops_*``: only the orchestrator may bring
-        # specialist workloads up or down (least-privilege per §2,
-        # so a compromised sub-agent cannot spin up unrelated
-        # infrastructure). Sub-agents see neither these tools nor the
-        # underlying daemon socket.
+        # Offensive work goes through ``task()`` to a specialist.
+        # The orchestrator carries two tool categories directly:
+        #
+        # 1. ADR-0006 ``ops_*``: only the orchestrator may bring
+        #    specialist workloads up or down (least-privilege §2).
+        # 2. Engagement-level intelligence & coordination tools:
+        #    cross-session memory (recall/store), OSINT feeds (KEV/GHSA),
+        #    vaccine loop, consensus validation, structured export, CART,
+        #    and finding-ID allocation for parallel dispatch.
         from decepticon.tools.ops import OPS_TOOLS
 
         tools = build_tools(
             role=_ROLE,
-            standard_tools={t.name: t for t in OPS_TOOLS},
+            standard_tools={
+                t.name: t
+                for t in [
+                    *OPS_TOOLS,
+                    *ENGAGEMENT_INTEL_TOOLS,
+                    *VACCINE_TOOLS,
+                    *CONSENSUS_TOOLS,
+                    *STRUCTURED_FINDING_TOOLS,
+                    *CART_TOOLS,
+                    allocate_finding_id,
+                ]
+            },
         )
     if middleware is None:
         middleware = build_middleware(

@@ -52,15 +52,10 @@ from decepticon.llm import LLMFactory
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.references.tools import killchain_lookup, oneliner_search
+from decepticon.tools.research.scope_expansion import SCOPE_EXPANSION_TOOLS
 from decepticon.tools.web.search import web_fetch, web_search
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
-# Name-keyed registry so plugin overrides can target specific tools.
-# KG tools were removed pending the Neo4j middleware redesign (see
-# docs/design/neo4j-research-notes.md). Recon writes findings to files
-# (recon/SUMMARY.md, findings/FIND-NNN.md); the future KG middleware
-# will ingest those files into Neo4j without burdening the agent's
-# tool surface.
 _STANDARD_TOOLS: dict[str, Any] = {
     t.name: t
     for t in [
@@ -70,6 +65,9 @@ _STANDARD_TOOLS: dict[str, Any] = {
         # Open-web acquisition (ADR-0010): keyword search + RoE-gated fetch
         web_search,
         web_fetch,
+        # Scope expansion intelligence — JS URL extraction, error page
+        # mining, subdomain takeover checks
+        *SCOPE_EXPANSION_TOOLS,
         # Execution
         *BASH_TOOLS,
     ]
