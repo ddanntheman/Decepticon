@@ -52,6 +52,7 @@ from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
 from decepticon.tools.research.scope_expansion import SCOPE_EXPANSION_TOOLS
 from decepticon.tools.research.secret_scanner import scan_secrets
 from decepticon.tools.research.secret_scanner_full import SECRET_SCANNER_FULL_TOOLS
+from decepticon.tools.research.smart_fuzzer import SMART_FUZZER_TOOLS
 from decepticon.tools.research.structured_findings import STRUCTURED_FINDING_TOOLS
 from decepticon.tools.research.taint_analyzer import TAINT_TOOLS
 from decepticon.tools.research.tech_detection import detect_tech_stack
@@ -2591,4 +2592,6 @@ RESEARCH_TOOLS = [
     *STRUCTURED_FINDING_TOOLS,
     # Autonomous scope expansion intelligence
     *SCOPE_EXPANSION_TOOLS,
+    # LLM-powered smart fuzzing
+    *SMART_FUZZER_TOOLS,
 ]
