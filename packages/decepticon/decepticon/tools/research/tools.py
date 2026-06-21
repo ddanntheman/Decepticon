@@ -49,6 +49,7 @@ from decepticon.tools.research.sarif import ingest_sarif_file
 from decepticon.tools.research.sast_orchestrator import SAST_TOOLS
 from decepticon.tools.research.sca import SCA_TOOLS
 from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
+from decepticon.tools.research.scope_expansion import SCOPE_EXPANSION_TOOLS
 from decepticon.tools.research.secret_scanner import scan_secrets
 from decepticon.tools.research.secret_scanner_full import SECRET_SCANNER_FULL_TOOLS
 from decepticon.tools.research.structured_findings import STRUCTURED_FINDING_TOOLS
@@ -2588,4 +2589,6 @@ RESEARCH_TOOLS = [
     *ENGAGEMENT_INTEL_TOOLS,
     # Structured finding output (JSON + DefectDojo + SARIF export)
     *STRUCTURED_FINDING_TOOLS,
+    # Autonomous scope expansion intelligence
+    *SCOPE_EXPANSION_TOOLS,
 ]
