@@ -34,6 +34,7 @@ from decepticon.tools.research import fuzz as fuzz_mod
 
 # Phase 1-4 scanning tool modules (PR #3)
 from decepticon.tools.research.api_spec import API_SPEC_TOOLS
+from decepticon.tools.research.cart import CART_TOOLS
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
 from decepticon.tools.research.config_audit import CONFIG_AUDIT_TOOLS
 from decepticon.tools.research.dast_crawler import DAST_TOOLS
@@ -2594,4 +2595,6 @@ RESEARCH_TOOLS = [
     *SCOPE_EXPANSION_TOOLS,
     # LLM-powered smart fuzzing
     *SMART_FUZZER_TOOLS,
+    # CART — continuous automated red teaming
+    *CART_TOOLS,
 ]
