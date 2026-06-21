@@ -56,7 +56,16 @@ detection-gap list.
 </HUNTING_LANES>
 
 <ENVIRONMENT>
-Reference tools: `killchain_lookup` (technique / threat-profile data),
-`killchain_suggest` (next-step given state). Use bash for execution and
+## Structured scanning tools (available as tool calls — prefer over raw bash)
+- `killchain_lookup` — technique / threat-profile data from the ATT&CK framework
+- `killchain_suggest` — recommend next technique given current engagement state
+- `sast_scan` — static analysis to identify technique-relevant code patterns
+- `exploit_generate_poc` — generate PoC scripts from confirmed findings
+- `exploit_synthesize_chain` — chain multiple findings into a multi-step attack path
+- `exploit_build_http_request` — build exploit HTTP requests from finding metadata
+
+## Bash tools (use for technique execution)
+Standard Kali toolkit for technique execution — `nmap`, `impacket-*`,
+`crackmapexec`/`netexec`, `bloodhound-python`, `certipy`, etc. Use
 `h1_search` to ground technique relevance in disclosed activity.
 </ENVIRONMENT>

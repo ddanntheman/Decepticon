@@ -30,14 +30,26 @@ from decepticon.tools.contracts.patterns import scan_solidity_source
 from decepticon.tools.contracts.slither import ingest_slither_file
 from decepticon.tools.research import cve as cve_mod
 from decepticon.tools.research import fuzz as fuzz_mod
+
+# Phase 1-4 scanning tool modules (PR #3)
+from decepticon.tools.research.api_spec import API_SPEC_TOOLS
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
+from decepticon.tools.research.config_audit import CONFIG_AUDIT_TOOLS
+from decepticon.tools.research.dast_crawler import DAST_TOOLS
 from decepticon.tools.research.dedupe import kg_dedupe_findings
+from decepticon.tools.research.exploit_synthesis import EXPLOIT_TOOLS
+from decepticon.tools.research.git_analysis import GIT_ANALYSIS_TOOLS
 from decepticon.tools.research.health import backend_health
+from decepticon.tools.research.iac_scanner import IAC_TOOLS
 from decepticon.tools.research.osint import OSINT_TOOLS
 from decepticon.tools.research.patch import PATCH_TOOLS
 from decepticon.tools.research.sarif import ingest_sarif_file
+from decepticon.tools.research.sast_orchestrator import SAST_TOOLS
+from decepticon.tools.research.sca import SCA_TOOLS
 from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
 from decepticon.tools.research.secret_scanner import scan_secrets
+from decepticon.tools.research.secret_scanner_full import SECRET_SCANNER_FULL_TOOLS
+from decepticon.tools.research.taint_analyzer import TAINT_TOOLS
 from decepticon.tools.research.tech_detection import detect_tech_stack
 from decepticon.tools.reversing.binary import identify_binary
 from decepticon.tools.reversing.packer import detect_packer
@@ -2361,6 +2373,117 @@ def kg_ingest_asrep_hashes(path: str, domain: str = "") -> str:
         return _json({"asrep_hashes_added": added, "stats": graph.stats()})
 
 
+# ── Scanning tool output → KG bridge ───────────────────────────────────
+
+
+@tool
+def kg_ingest_scan_findings(findings_json: str) -> str:
+    """Ingest scanning tool findings (SAST, SCA, config audit, taint, DAST, etc.) into the KG.
+
+    WHEN TO USE: After calling any scanning tool (sast_scan, sca_scan_dependencies,
+    audit_security_headers, taint_analyze_codebase, dast_test_endpoints, etc.) that
+    returns JSON with findings. Pipe the output here to populate the knowledge graph
+    so plan_attack_chains can reason about the discovered vulnerabilities.
+
+    The tool parses common finding shapes:
+      - ``{"findings": [...]}`` (SAST, taint, config audit, DAST)
+      - ``{"vulnerabilities": [...]}`` (SCA)
+      - ``{"results": [...]}`` (API spec, IaC)
+
+    Each finding becomes a Vulnerability node linked to its code location (if
+    file/line are present). Severity is mapped from the finding's severity field.
+
+    Args:
+        findings_json: JSON string output from a scanning tool.
+
+    Returns:
+        JSON with the ingested finding count and updated graph stats.
+    """
+    try:
+        data = json.loads(findings_json)
+    except json.JSONDecodeError as e:
+        return _json({"error": f"invalid JSON: {e}"})
+
+    if not isinstance(data, dict):
+        return _json({"error": "expected a JSON object with findings/vulnerabilities/results"})
+
+    items: list[dict[str, Any]] = []
+    for key in ("findings", "vulnerabilities", "results", "issues", "misconfigurations"):
+        val = data.get(key)
+        if isinstance(val, list):
+            items.extend(v for v in val if isinstance(v, dict))
+
+    if not items:
+        return _json(
+            {"error": "no findings/vulnerabilities/results array found", "keys": list(data.keys())}
+        )
+
+    added = 0
+    with graph_transaction() as graph:
+        for item in items:
+            title = (
+                item.get("rule_id")
+                or item.get("title")
+                or item.get("id")
+                or item.get("name", "unknown")
+            )
+            msg = item.get("message") or item.get("description") or item.get("detail", "")
+            sev_str = item.get("severity") or item.get("level", "medium")
+            severity = _severity_from_string(str(sev_str))
+            file_path = item.get("file") or item.get("path") or item.get("location", "")
+            line = item.get("line") or item.get("line_start") or item.get("start_line", 0)
+            source = (
+                item.get("scanner")
+                or item.get("tool")
+                or item.get("source")
+                or data.get("scanner", "scan")
+            )
+
+            key = f"scan-finding::{source}::{title}::{file_path}:{line}"
+            vuln = graph.upsert_node(
+                Node.make(
+                    NodeKind.VULNERABILITY,
+                    f"[{source}] {title}",
+                    key=key,
+                    severity=severity.value,
+                    message=str(msg)[:500],
+                    file=str(file_path),
+                    line=int(line) if line else 0,
+                    source=str(source),
+                    cwe=item.get("cwe", []),
+                )
+            )
+
+            if file_path:
+                file_key = f"file::{file_path}"
+                file_node = graph.upsert_node(
+                    Node.make(NodeKind.SOURCE_FILE, str(file_path), key=file_key)
+                )
+                graph.upsert_edge(Edge.make(vuln.id, file_node.id, EdgeKind.DEFINED_IN, weight=0.4))
+
+                if line:
+                    loc_key = f"code_location::{file_path}:{line}"
+                    loc_node = graph.upsert_node(
+                        Node.make(
+                            NodeKind.CODE_LOCATION,
+                            f"{file_path}:{line}",
+                            key=loc_key,
+                            file=str(file_path),
+                            line=int(line),
+                        )
+                    )
+                    graph.upsert_edge(
+                        Edge.make(vuln.id, loc_node.id, EdgeKind.DEFINED_IN, weight=0.3)
+                    )
+                    graph.upsert_edge(
+                        Edge.make(file_node.id, loc_node.id, EdgeKind.CONTAINS, weight=0.3)
+                    )
+
+            added += 1
+
+        return _json({"ingested": added, "stats": graph.stats()})
+
+
 # ── Public tool list ────────────────────────────────────────────────────
 
 RESEARCH_TOOLS = [
@@ -2383,6 +2506,7 @@ RESEARCH_TOOLS = [
     kg_ingest_crackmapexec,
     kg_ingest_asrep_hashes,
     kg_ingest_sarif,
+    kg_ingest_scan_findings,
     kg_analyze_jwt,
     kg_analyze_oauth_callback,
     kg_analyze_cookie_value,
@@ -2403,4 +2527,15 @@ RESEARCH_TOOLS = [
     *SCANNER_TOOLS,
     *PATCH_TOOLS,
     *OSINT_TOOLS,
+    # Phase 1-4 scanning tool modules
+    *SAST_TOOLS,
+    *SCA_TOOLS,
+    *CONFIG_AUDIT_TOOLS,
+    *SECRET_SCANNER_FULL_TOOLS,
+    *GIT_ANALYSIS_TOOLS,
+    *API_SPEC_TOOLS,
+    *TAINT_TOOLS,
+    *IAC_TOOLS,
+    *EXPLOIT_TOOLS,
+    *DAST_TOOLS,
 ]

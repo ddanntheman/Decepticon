@@ -19,11 +19,13 @@ from __future__ import annotations
 from typing import Any
 
 from decepticon.agents.bounty._common import make_bounty_agent
+from decepticon.tools.research.api_spec import API_SPEC_TOOLS
+from decepticon.tools.research.dast_crawler import DAST_TOOLS
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled
 
 _ROLE = "api_security"
 
-_DOMAIN_TOOLS: list[Any] = []
+_DOMAIN_TOOLS: list[Any] = [*API_SPEC_TOOLS, *DAST_TOOLS]
 
 create_api_security_agent = make_bounty_agent(role=_ROLE, domain_tools=_DOMAIN_TOOLS)
 

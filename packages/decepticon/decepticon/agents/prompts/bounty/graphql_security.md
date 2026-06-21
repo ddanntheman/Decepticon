@@ -53,7 +53,13 @@ resolver args for SQL/NoSQL injection and SSRF sinks.
 </HUNTING_LANES>
 
 <ENVIRONMENT>
-Recommended bash tools: `curl`/`httpie`, `graphw00f` (engine
-fingerprint), `clairvoyance` (schema recovery when introspection is
-off), `graphql-cop`. Use `payload_search` for GraphQL payloads.
+## Structured scanning tools (available as tool calls — prefer over raw bash)
+- `dast_crawl` — discover GraphQL endpoints and other API surfaces
+- `dast_test_endpoints` — automated injection/complexity testing of GraphQL endpoints
+- `dast_test_single` — targeted test of a single GraphQL query/mutation
+
+## Bash tools (use when structured tools don't cover)
+`curl`/`httpie`, `graphw00f` (engine fingerprint), `clairvoyance`
+(schema recovery when introspection is off), `graphql-cop`. Use
+`payload_search` for GraphQL payloads.
 </ENVIRONMENT>

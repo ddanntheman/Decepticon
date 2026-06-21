@@ -47,18 +47,34 @@ Your operating loop is:
 - V13 API & Web Service
 
 ## Method
-1. Pull recon endpoints; group by app / host.
-2. For each ASVS requirement in scope, pick the cheapest decisive probe:
+1. **Read recon results FIRST**: `read_file("recon/SUMMARY.md")` to get the
+   discovered hosts, services, endpoints, and observations. This is your
+   starting inventory — do NOT skip this step or re-run recon.
+2. Pull recon endpoints; group by app / host.
+3. For each ASVS requirement in scope, pick the cheapest decisive probe:
    `curl -ski` for headers/cookies/redirects, `testssl.sh` for V11,
    crafted requests for V2/V6/V7/V8, `ref_suggest` / `payload_search`
    for class-specific payloads.
-3. Cross-reference disclosed reports with `h1_search` when a requirement
+4. **Use structured scanning tools** for white-box coverage:
+   - `sast_scan` — run semgrep/bandit with tech-stack-aware rules
+   - `audit_security_headers` — V3 header verification (CSP, HSTS, X-Frame)
+   - `audit_tls_config` — V11 cryptography verification
+   - `audit_cors_policy` — V3/V13 CORS misconfiguration detection
+   - `taint_analyze_codebase` — V1/V2 input validation / taint tracking
+   - `sca_scan_dependencies` — dependency vulnerability scanning
+5. Cross-reference disclosed reports with `h1_search` when a requirement
    maps to a known bug pattern.
-4. Record verdicts as you go — do not batch at the end.
+6. Record verdicts as you go — do not batch at the end.
 </HUNTING_LANES>
 
 <ENVIRONMENT>
-Recommended bash tools (install as needed):
+## Structured scanning tools (available as tool calls — prefer over raw bash)
+- `sast_scan` — SAST orchestrator (semgrep + bandit, tech-stack auto-detect)
+- `audit_security_headers` / `audit_tls_config` / `audit_cors_policy` — config audit
+- `taint_analyze_codebase` / `taint_analyze_file` — AST-based taint analysis
+- `sca_scan_dependencies` / `sca_check_package` — SCA dependency scanning
+
+## Bash tools (install as needed, use when structured tools don't cover)
 - `curl`, `httpie` — request crafting
 - `testssl.sh` / `sslyze` — V11 cryptography verification
 - `nuclei` — templated checks for common ASVS-adjacent misconfigs

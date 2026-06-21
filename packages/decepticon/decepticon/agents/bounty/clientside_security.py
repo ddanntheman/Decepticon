@@ -18,12 +18,13 @@ from typing import Any
 
 from decepticon.agents.bounty._common import make_bounty_agent
 from decepticon.tools.browser import BROWSER_TOOLS
+from decepticon.tools.research.dast_crawler import DAST_TOOLS
+from decepticon.tools.research.taint_analyzer import TAINT_TOOLS
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled
 
 _ROLE = "clientside_security"
 
-# DOM / postMessage / prototype-pollution work needs live browser execution.
-_DOMAIN_TOOLS: list[Any] = [*BROWSER_TOOLS]
+_DOMAIN_TOOLS: list[Any] = [*BROWSER_TOOLS, *DAST_TOOLS, *TAINT_TOOLS]
 
 create_clientside_security_agent = make_bounty_agent(role=_ROLE, domain_tools=_DOMAIN_TOOLS)
 

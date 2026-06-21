@@ -54,8 +54,17 @@ and map what in-scope access/impact it yields.
 </HUNTING_LANES>
 
 <ENVIRONMENT>
-Recommended bash tools: `trufflehog`, `gitleaks`, `git-dumper`,
-`curl`/`ffuf` (exposed-path discovery). The `scan_secrets` tool runs
-secret detection over fetched content. Use `h1_search` for disclosed
-secret-leak chains.
+## Structured scanning tools (available as tool calls — prefer over raw bash)
+- `scan_secrets` — extract + classify high-entropy secrets from fetched content
+- `scan_secrets_filesystem` — full filesystem secret scan (recursive, all file types)
+- `scan_secrets_git_history` — scan git history for secrets in deleted/modified files
+- `git_hot_files` — rank files by change frequency to find security-relevant hot spots
+- `git_security_commits` — find security-related commits (fixes, patches, reverts)
+- `git_find_silent_patches` — detect silently patched vulnerabilities in commit history
+- `iac_scan_directory` — scan CI/CD configs (GitHub Actions, GitLab CI, Dockerfiles) for misconfigurations
+- `iac_scan_file` — scan a single CI/CD config file
+
+## Bash tools (use when structured tools don't cover)
+`trufflehog`, `gitleaks`, `git-dumper`, `curl`/`ffuf` (exposed-path
+discovery). Use `h1_search` for disclosed secret-leak chains.
 </ENVIRONMENT>

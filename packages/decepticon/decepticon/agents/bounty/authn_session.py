@@ -18,11 +18,13 @@ from __future__ import annotations
 from typing import Any
 
 from decepticon.agents.bounty._common import make_bounty_agent
+from decepticon.tools.research.config_audit import CONFIG_AUDIT_TOOLS
+from decepticon.tools.research.dast_crawler import DAST_TOOLS
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled
 
 _ROLE = "authn_session"
 
-_DOMAIN_TOOLS: list[Any] = []
+_DOMAIN_TOOLS: list[Any] = [*CONFIG_AUDIT_TOOLS, *DAST_TOOLS]
 
 create_authn_session_agent = make_bounty_agent(role=_ROLE, domain_tools=_DOMAIN_TOOLS)
 

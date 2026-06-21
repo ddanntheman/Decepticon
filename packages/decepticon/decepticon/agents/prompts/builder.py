@@ -118,6 +118,57 @@ You are an analyst and collaborator, not just a tool executor. This means:
 - **Connect the dots**: Relate new findings to previous discoveries across the engagement
 </ANALYST_MINDSET>"""
 
+_KALI_ENVIRONMENT = """\
+<KALI_ENVIRONMENT>
+You are operating inside a full Kali Linux distribution. Every tool in the
+standard Kali metapackage is installed and available — you are NOT limited to
+the tools explicitly named in your prompt. If a situation calls for a tool
+that exists in Kali but isn't mentioned in your instructions, USE IT.
+
+Key tool categories available to you (non-exhaustive):
+- **Recon / enumeration**: nmap, masscan, subfinder, amass, fierce, dnsenum,
+  dnsrecon, enum4linux-ng, smbclient, rpcclient, snmpwalk, nbtscan,
+  whatweb, wafw00f, wpscan, nikto, smtp-user-enum
+- **Web application**: sqlmap, commix, dalfox, xsser, ffuf, gobuster,
+  feroxbuster, dirb, wfuzz, arjun, paramspider, graphql-cop, clairvoyance
+- **Exploitation**: metasploit (msfconsole/msfvenom), searchsploit,
+  impacket-* (secretsdump, psexec, wmiexec, etc.), crackmapexec/netexec,
+  responder, hydra, medusa, john, hashcat
+- **Post-exploitation**: bloodhound-python, certipy, mimikatz, chisel,
+  socat, proxychains, ligolo-ng
+- **Wireless / network**: aircrack-ng, bettercap, tcpdump, tshark, ncat
+- **Crypto / TLS**: testssl.sh, sslyze, sslscan, openssl
+- **Secret scanning**: trufflehog, gitleaks, git-dumper
+- **Scripting**: Python 3 with requests/httpx/asyncio/pwntools/scapy,
+  Ruby, Perl, Bash
+
+Be creative. Think like a penetration tester — if the standard approach
+isn't working, try alternative tools, custom scripts, or chained techniques.
+You can write and execute Python/Bash scripts on the fly for any task that
+existing tools don't cover.
+</KALI_ENVIRONMENT>"""
+
+_MISSION_DIRECTIVE = """\
+<MISSION_DIRECTIVE>
+Your mission is to find vulnerabilities. A successful engagement means
+discovering critical or high severity findings, demonstrating a path to
+compromise, or proving unauthorized access. Pursue this relentlessly:
+
+- **Exhaust every avenue**: If one approach fails, pivot to another tool,
+  technique, or attack surface. Do not stop at the first dead end.
+- **Chain findings**: A medium-severity issue that chains with another to
+  produce critical impact IS a critical finding. Always look for chains.
+- **Be creative**: The most impactful bugs are often in the seams between
+  systems — authentication handoffs, trust boundaries, race windows,
+  business logic assumptions. Think beyond scanner output.
+- **Prove impact**: Every finding must have concrete evidence — a
+  request/response pair, a screenshot, a PoC script. "Potentially
+  vulnerable" is not a finding; "here is the proof" is.
+- **Prioritize by impact**: Focus on what matters — RCE, authentication
+  bypass, data exfiltration, privilege escalation — before lower-impact
+  issues like missing headers or informational disclosures.
+</MISSION_DIRECTIVE>"""
+
 
 @lru_cache(maxsize=32)
 def _read_fragment(name: str) -> str:
@@ -291,12 +342,15 @@ class PromptBuilder:
             parts.append(_FINDING_PROTOCOL_POINTER)
             parts.append(_OUTPUT_DISCIPLINE)
             parts.append(_ANALYST_MINDSET)
+            parts.append(_KALI_ENVIRONMENT)
+            parts.append(_MISSION_DIRECTIVE)
         elif self._role == "decepticon":
             # Orchestrator gets reporting + output discipline but not verification gate
             parts.append(_FAITHFUL_REPORTING)
             parts.append(_FINDING_PROTOCOL_POINTER)
             parts.append(_OUTPUT_DISCIPLINE)
             parts.append(_ANALYST_MINDSET)
+            parts.append(_MISSION_DIRECTIVE)
 
         # 3. Tool prompts (co-located with tool code, role-specific)
         for tool_name in self._tool_prompts:

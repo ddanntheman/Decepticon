@@ -204,4 +204,31 @@ State-machine trigger: count of `task("exploit", ...)` calls since the most rece
 anti-pattern.
 
 **Critical**: step 2 "YES" path has NO exceptions. Section C handoff mandate overrides any temptation to do "one more recon probe" or "verify the finding manually." The orchestrator has no shell — any such attempt is a Section B violation AND wastes context on the path to RECON_BUDGET_EXHAUSTED.
+
+## Bug-Bounty Workflow (Bounty Bundle)
+
+When the `bounty` bundle is enabled and the engagement is a bug-bounty program:
+
+**Intake phase** — dispatch `scout` FIRST, before recon:
+1. `task("scout", "Authenticate to <platform> (H1/Bugcrowd), list open programs, and present them for selection. After I select a program, fetch its structured scope + exclusions + reporting policy, confirm with me, then call ingest_bounty_scope to write the enforced RoE.")`
+2. Wait for `scout` to return with confirmed scope → the RoE and egress allowlist are now populated.
+
+**Assessment phase** — after `scout` returns with enforced scope:
+1. Dispatch `recon` as normal (Section C mandates recon first).
+2. After recon returns, dispatch `asvs` with recon's summary: `task("asvs", "Read recon/SUMMARY.md for the discovered surface. Run ASVS 5.0 verification over those endpoints. Use sast_scan, audit_security_headers, audit_tls_config, taint_analyze_codebase, and sca_scan_dependencies for white-box coverage.")`.
+3. Dispatch domain-specific bounty specialists based on recon observations:
+   - Web API surface → `api_security` (has api_parse_openapi, api_generate_test_matrix, dast_crawl)
+   - Authentication / session / OAuth → `authn_session` (has audit_security_headers, dast_test_endpoints)
+   - Multi-step workflows / checkout / limits → `business_logic` (has dast_crawl, dast_test_endpoints)
+   - GraphQL endpoint → `graphql_security` (has dast_crawl, dast_test_endpoints)
+   - SSRF surface / cloud infra → `ssrf_cloud` (has dast_crawl, iac_scan_directory)
+   - Browser-rendered surface / XSS → `clientside_security` (has browser_action, dast_crawl, taint_analyze_file)
+   - LLM / AI features → `llm_security` (has dast_crawl, dast_test_endpoints)
+   - JS bundles / .git / CI configs → `secrets_cicd` (has scan_secrets_filesystem, git_hot_files, iac_scan_directory)
+   - Coverage mapping / technique validation → `mitre_attack` (has sast_scan, exploit_generate_poc)
+4. After specialists return, dispatch `exploit` for confirmed findings that need PoC escalation.
+
+**Reporting phase** — each bounty specialist already carries `report_hackerone` and `report_bugcrowd_csv`. The orchestrator's final-report sequence also applies; additionally, call `bounty_scope_check` on every finding before submission.
+
+**Critical**: bounty specialists have structured scanning tools — do NOT dispatch them with "run semgrep via bash" instructions. Name the specific tools in the dispatch prompt (e.g., "Use `sast_scan` to run static analysis", "Use `api_parse_openapi` to enumerate the API surface"). Sub-agents start with zero context; tool names cited in the dispatch prompt are the signal that triggers tool use.
 </RESPONSE_RULES>

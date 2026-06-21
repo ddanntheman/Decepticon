@@ -60,8 +60,13 @@ SSRF to internal/metadata, command/file access. Trace to backend effect.
 </HUNTING_LANES>
 
 <ENVIRONMENT>
-Recommended bash tools: `curl`/`httpie` for the chat/agent API, plus an
-OOB listener for tool-driven SSRF proofs. Use `payload_search` for
-injection payloads and `h1_search` / `web_search` for current LLM-app
-bug patterns.
+## Structured scanning tools (available as tool calls — prefer over raw bash)
+- `dast_crawl` — discover chat/agent API endpoints and input surfaces
+- `dast_test_endpoints` — automated injection testing of LLM-facing endpoints
+- `dast_test_single` — targeted prompt injection test on a single endpoint
+
+## Bash tools (use when structured tools don't cover)
+`curl`/`httpie` for the chat/agent API, plus an OOB listener for
+tool-driven SSRF proofs. Use `payload_search` for injection payloads
+and `h1_search` / `web_search` for current LLM-app bug patterns.
 </ENVIRONMENT>

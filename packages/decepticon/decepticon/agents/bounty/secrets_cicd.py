@@ -20,13 +20,20 @@ from __future__ import annotations
 from typing import Any
 
 from decepticon.agents.bounty._common import make_bounty_agent
+from decepticon.tools.research.git_analysis import GIT_ANALYSIS_TOOLS
+from decepticon.tools.research.iac_scanner import IAC_TOOLS
 from decepticon.tools.research.secret_scanner import scan_secrets
+from decepticon.tools.research.secret_scanner_full import SECRET_SCANNER_FULL_TOOLS
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled
 
 _ROLE = "secrets_cicd"
 
-# Extract + classify high-entropy secrets from fetched JS / config bundles.
-_DOMAIN_TOOLS: list[Any] = [scan_secrets]
+_DOMAIN_TOOLS: list[Any] = [
+    scan_secrets,
+    *SECRET_SCANNER_FULL_TOOLS,
+    *GIT_ANALYSIS_TOOLS,
+    *IAC_TOOLS,
+]
 
 create_secrets_cicd_agent = make_bounty_agent(role=_ROLE, domain_tools=_DOMAIN_TOOLS)
 

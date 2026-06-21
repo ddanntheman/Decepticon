@@ -19,11 +19,13 @@ from __future__ import annotations
 from typing import Any
 
 from decepticon.agents.bounty._common import make_bounty_agent
+from decepticon.tools.research.dast_crawler import DAST_TOOLS
+from decepticon.tools.research.iac_scanner import IAC_TOOLS
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled
 
 _ROLE = "ssrf_cloud"
 
-_DOMAIN_TOOLS: list[Any] = []
+_DOMAIN_TOOLS: list[Any] = [*DAST_TOOLS, *IAC_TOOLS]
 
 create_ssrf_cloud_agent = make_bounty_agent(role=_ROLE, domain_tools=_DOMAIN_TOOLS)
 

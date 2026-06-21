@@ -55,7 +55,17 @@ gadget and demonstrate impact.
 </HUNTING_LANES>
 
 <ENVIRONMENT>
-You have a browser tool for live confirmation. Recommended bash tools:
-`curl`, a JS beautifier, and DOM/source review. Use `payload_search` for
-XSS/polyglot payloads and `h1_search` for disclosed client-side chains.
+## Structured scanning tools (available as tool calls — prefer over raw bash)
+- `dast_crawl` — crawl target to discover pages, forms, and JavaScript entry points
+- `dast_test_endpoints` — automated injection testing of discovered endpoints
+- `dast_test_single` — targeted XSS/injection test on a single endpoint
+- `taint_analyze_file` — AST-based taint analysis of JavaScript source files
+- `taint_analyze_codebase` — scan entire codebase for source→sink taint flows
+- `browser_action` — live Playwright browser for DOM-sink and postMessage proof
+
+## Bash tools (use when structured tools don't cover)
+`curl`, `dalfox` (XSS scanner/fuzzer with DOM analysis — use for automated
+XSS discovery), a JS beautifier, and DOM/source review. Use
+`payload_search` for XSS/polyglot payloads and `h1_search` for disclosed
+client-side chains.
 </ENVIRONMENT>

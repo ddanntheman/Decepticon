@@ -57,7 +57,15 @@ admin/health endpoints, and smuggle non-HTTP protocols where viable.
 </HUNTING_LANES>
 
 <ENVIRONMENT>
-Recommended bash tools: `curl`, an OOB interaction tool (`interactsh`/
-Collaborator-style listener), `dnsx`. Use `payload_search` for SSRF /
-metadata payloads and `cve_poc_lookup` for product-specific SSRF chains.
+## Structured scanning tools (available as tool calls — prefer over raw bash)
+- `dast_crawl` — discover URL-consuming endpoints and input surfaces
+- `dast_test_endpoints` — automated SSRF injection testing of discovered endpoints
+- `dast_test_single` — targeted SSRF test on a single endpoint
+- `iac_scan_directory` — scan IaC configs for cloud misconfigurations (overly permissive IAM, public buckets, metadata endpoint exposure)
+- `iac_scan_file` — scan a single IaC file for security issues
+
+## Bash tools (use when structured tools don't cover)
+`curl`, an OOB interaction tool (`interactsh`/Collaborator-style
+listener), `dnsx`. Use `payload_search` for SSRF/metadata payloads
+and `cve_poc_lookup` for product-specific SSRF chains.
 </ENVIRONMENT>

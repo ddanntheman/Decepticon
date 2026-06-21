@@ -54,8 +54,14 @@ tenant-boundary violations driven by workflow rather than direct authZ.
 </HUNTING_LANES>
 
 <ENVIRONMENT>
-Recommended bash tools: `curl`/`httpie`, `ffuf`, and a concurrency
-driver for races (parallel `curl`, `turbo-intruder`-style scripts, or a
-short Python `asyncio`/`httpx` burst). Use `h1_search` for disclosed
-logic/race chains.
+## Structured scanning tools (available as tool calls — prefer over raw bash)
+- `dast_crawl` — crawl the target to map multi-step workflows and forms
+- `dast_test_endpoints` — automated testing of discovered endpoints
+- `dast_test_single` — targeted test of a single endpoint for logic flaws
+
+## Bash tools (use when structured tools don't cover)
+`curl`/`httpie`, `ffuf`, and a concurrency driver for races (parallel
+`curl`, `turbo-intruder`-style scripts, or a short Python
+`asyncio`/`httpx` burst). Use `h1_search` for disclosed logic/race
+chains.
 </ENVIRONMENT>

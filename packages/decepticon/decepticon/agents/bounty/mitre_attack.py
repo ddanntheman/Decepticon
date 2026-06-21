@@ -22,13 +22,13 @@ from typing import Any
 
 from decepticon.agents.bounty._common import make_bounty_agent
 from decepticon.tools.references.tools import killchain_suggest
+from decepticon.tools.research.exploit_synthesis import EXPLOIT_TOOLS
+from decepticon.tools.research.sast_orchestrator import SAST_TOOLS
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled
 
 _ROLE = "mitre_attack"
 
-# ``killchain_lookup`` is already in the shared reference surface; add the
-# objective→technique planner so this agent can build emulation plans.
-_DOMAIN_TOOLS: list[Any] = [killchain_suggest]
+_DOMAIN_TOOLS: list[Any] = [killchain_suggest, *SAST_TOOLS, *EXPLOIT_TOOLS]
 
 create_mitre_attack_agent = make_bounty_agent(role=_ROLE, domain_tools=_DOMAIN_TOOLS)
 
