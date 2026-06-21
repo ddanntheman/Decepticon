@@ -373,6 +373,6 @@ summary.
 
 **Mandatory pre-return**: all completed documents must be written to
 `plan/` and validated before returning. The 8-document set is:
-roe.json, threat_profile.json, conops.json, deconfliction.json,
-contacts.json, data_handling.json, abort.json, cleanup.json.
+roe.json, threat-profile.json, conops.json, deconfliction.json,
+contact.json, data-handling.json, abort.json, cleanup.json.
 </COMPLETION_CRITERIA>

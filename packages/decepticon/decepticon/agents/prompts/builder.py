@@ -270,8 +270,10 @@ _OPERATIONAL_ROLES = {
     "cloud_hunter",
     "ad_operator",
     "phisher",
-    "forensicator",
-    "osint_operator",
+    # NOTE: forensicator and osint_operator are in _PASSIVE_ROLES (below),
+    # not here. They get the 5 compatible cross-cutting prompts but NOT
+    # _MISSION_DIRECTIVE or _KALI_ENVIRONMENT, which contradict their
+    # agent-specific read-only / passive-only rules.
     "mobile_operator",
     "iot_operator",
     "ics_operator",
@@ -294,6 +296,15 @@ _OPERATIONAL_ROLES = {
     "clientside_security",
     "llm_security",
     "secrets_cicd",
+}
+
+# Passive/analysis-only roles get the quality guardrails (faithful reporting,
+# verification gate, finding protocol, output discipline, analyst mindset) but
+# NOT the attack-oriented cross-cutting prompts (_MISSION_DIRECTIVE,
+# _KALI_ENVIRONMENT) which contradict their agent-specific rules.
+_PASSIVE_ROLES = {
+    "forensicator",   # "NEVER attack, modify a live host, or alter evidence"
+    "osint_operator",  # "NEVER send a packet to the target's infrastructure"
 }
 
 
@@ -362,6 +373,14 @@ class PromptBuilder:
             parts.append(_ANALYST_MINDSET)
             parts.append(_KALI_ENVIRONMENT)
             parts.append(_MISSION_DIRECTIVE)
+        elif self._role in _PASSIVE_ROLES:
+            # Passive/analysis-only agents get quality guardrails but NOT the
+            # attack-oriented _MISSION_DIRECTIVE or _KALI_ENVIRONMENT.
+            parts.append(_FAITHFUL_REPORTING)
+            parts.append(_VERIFICATION_GATE)
+            parts.append(_FINDING_PROTOCOL_POINTER)
+            parts.append(_OUTPUT_DISCIPLINE)
+            parts.append(_ANALYST_MINDSET)
         elif self._role == "decepticon":
             # Orchestrator gets reporting + output discipline but not verification gate
             parts.append(_FAITHFUL_REPORTING)
