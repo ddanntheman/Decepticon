@@ -180,7 +180,10 @@ def audit_security_headers(url: str) -> str:
     grade and actionable findings.
     """
     try:
-        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True, verify=False) as client:
+        with httpx.Client(
+            timeout=_TIMEOUT,
+            follow_redirects=True,
+        ) as client:
             resp = client.get(url)
     except httpx.HTTPError as exc:
         return _json({"error": "request_failed", "url": url, "detail": str(exc)})
@@ -256,7 +259,10 @@ def audit_cors_policy(url: str, test_origin: str = "https://evil.example.com") -
     reflecting arbitrary origins).
     """
     try:
-        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True, verify=False) as client:
+        with httpx.Client(
+            timeout=_TIMEOUT,
+            follow_redirects=True,
+        ) as client:
             resp = client.options(
                 url,
                 headers={"Origin": test_origin, "Access-Control-Request-Method": "GET"},

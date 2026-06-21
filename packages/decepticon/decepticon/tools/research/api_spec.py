@@ -30,7 +30,10 @@ def _load_spec(source: str) -> tuple[dict[str, Any] | None, str]:
     """Load an OpenAPI spec from a file path or URL. Returns (data, error)."""
     try:
         if source.startswith("http://") or source.startswith("https://"):
-            with httpx.Client(timeout=_TIMEOUT, follow_redirects=True, verify=False) as client:
+            with httpx.Client(
+                timeout=_TIMEOUT,
+                follow_redirects=True,
+            ) as client:
                 resp = client.get(source)
             if resp.status_code != 200:
                 return None, f"HTTP {resp.status_code} fetching spec"
@@ -328,7 +331,10 @@ def api_detect_undocumented(base_url: str, spec_source: str) -> str:
 
     findings: list[dict[str, Any]] = []
     try:
-        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True, verify=False) as client:
+        with httpx.Client(
+            timeout=_TIMEOUT,
+            follow_redirects=True,
+        ) as client:
             for ep in get_endpoints:
                 path = ep["path"]
                 # Skip paths with path params (we can't substitute)

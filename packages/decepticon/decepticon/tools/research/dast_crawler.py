@@ -100,7 +100,10 @@ def _crawl(
     errors: list[str] = []
 
     try:
-        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True, verify=False) as client:
+        with httpx.Client(
+            timeout=_TIMEOUT,
+            follow_redirects=True,
+        ) as client:
             while queue and len(visited) < max_pages:
                 url, depth = queue.pop(0)
                 if url in visited or depth > max_depth:
@@ -277,7 +280,10 @@ def dast_test_endpoints(
     tests_run = 0
 
     try:
-        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True, verify=False) as client:
+        with httpx.Client(
+            timeout=_TIMEOUT,
+            follow_redirects=True,
+        ) as client:
             for ep in endpoints[:50]:
                 url = ep.get("url", "")
                 method = ep.get("method", "GET").upper()
@@ -324,7 +330,10 @@ def dast_test_single(
     tests_run = 0
 
     try:
-        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True, verify=False) as client:
+        with httpx.Client(
+            timeout=_TIMEOUT,
+            follow_redirects=True,
+        ) as client:
             for vtype in selected_types:
                 payloads = _INJECTION_PAYLOADS.get(vtype, [])
                 tests_run += len(payloads)
