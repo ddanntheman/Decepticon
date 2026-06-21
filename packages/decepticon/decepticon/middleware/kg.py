@@ -74,6 +74,35 @@ KG_SYSTEM_PROMPT = (
 _REVISION_DIRTY_MARKER = "dirty"
 
 
+def _extract_tool_call_id(request: Any) -> str | None:
+    """Best-effort extraction of the tool_call_id from a middleware request.
+
+    Mirrors the ``_tcid`` helper in ``middleware/roe.py``. Tries the
+    direct ``request.tool_call_id`` attribute first (set by LangChain's
+    middleware plumbing in most cases), then falls back to
+    ``request.tool_call.id`` (object) and ``request.tool_call["id"]``
+    (dict). Returns ``None`` — never a fabricated fallback — so callers
+    can decide how to handle the missing-ID case without corrupting
+    the message history.
+    """
+    # 1. Direct attribute (most LangChain middleware request objects)
+    tc = getattr(request, "tool_call_id", None)
+    if isinstance(tc, str) and tc:
+        return tc
+    # 2. Nested object attribute: request.tool_call.id
+    tool_call = getattr(request, "tool_call", None)
+    if tool_call is not None:
+        tc_id = getattr(tool_call, "id", None)
+        if isinstance(tc_id, str) and tc_id:
+            return tc_id
+        # 3. Nested dict key: request.tool_call["id"]
+        if isinstance(tool_call, dict):
+            tc_id = tool_call.get("id")
+            if isinstance(tc_id, str) and tc_id:
+                return tc_id
+    return None
+
+
 class KGMiddleware(AgentMiddleware):
     """Attach the KG to an agent.
 
@@ -216,16 +245,22 @@ class KGMiddleware(AgentMiddleware):
         get = state.get if hasattr(state, "get") else (lambda _k, _d=None: None)
         if get("kg_engagement"):
             return None
-        tool_call = getattr(request, "tool_call", None)
-        tool_call_id = (
-            getattr(tool_call, "id", None)
-            if tool_call is not None
-            else (
-                request.tool_call.get("id")
-                if isinstance(getattr(request, "tool_call", None), dict)
-                else None
+
+        tool_call_id = _extract_tool_call_id(request)
+        if tool_call_id is None:
+            # Cannot extract the tool_call_id from the request. Returning a
+            # ToolMessage with a fabricated ID would corrupt the message history
+            # (no matching tool_use block), causing every downstream model call
+            # to fail with a 400. Log and let the call through — the tool
+            # itself also checks kg_engagement and will return an error with
+            # the correct tool_call_id via LangChain's normal plumbing.
+            log.warning(
+                "KGMiddleware: cannot extract tool_call_id for %s rejection; "
+                "skipping middleware rejection to avoid message-history corruption",
+                getattr(tool, "name", "?"),
             )
-        ) or "kg-middleware-rejection"
+            return None
+
         return ToolMessage(
             content=json.dumps(
                 {
@@ -237,6 +272,7 @@ class KGMiddleware(AgentMiddleware):
             ),
             tool_call_id=tool_call_id,
             name=getattr(tool, "name", "kg_tool"),
+            status="error",
         )
 
     # ── after_model ───────────────────────────────────────────────────
