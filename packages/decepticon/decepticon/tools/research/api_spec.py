@@ -89,6 +89,7 @@ def _extract_endpoints(spec: dict[str, Any]) -> list[dict[str, Any]]:
                         "parameters": params,
                         "auth_required": auth,
                         "request_body": _extract_request_body(op),
+                        "response_properties": _extract_response_properties(op, spec),
                     }
                 )
     return endpoints
@@ -168,6 +169,32 @@ def _resolve_ref(ref: str, spec: dict[str, Any]) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
+def _extract_response_properties(op: dict[str, Any], spec: dict[str, Any]) -> list[str]:
+    """Extract response schema property names for the 200 response."""
+    responses = op.get("responses", {})
+    ok_resp = responses.get("200") or responses.get(200) or responses.get("201") or {}
+    if "$ref" in ok_resp:
+        ok_resp = _resolve_ref(ok_resp["$ref"], spec) or ok_resp
+    # OpenAPI v3: content -> application/json -> schema -> properties
+    content = ok_resp.get("content", {})
+    for ct, media in content.items():
+        if "json" in ct and isinstance(media, dict):
+            schema = media.get("schema", {})
+            if "$ref" in schema:
+                schema = _resolve_ref(schema["$ref"], spec) or schema
+            props = schema.get("properties", {})
+            if props:
+                return list(props.keys())[:30]
+    # OpenAPI v2: schema -> properties
+    schema = ok_resp.get("schema", {})
+    if "$ref" in schema:
+        schema = _resolve_ref(schema["$ref"], spec) or schema
+    props = schema.get("properties", {})
+    if props:
+        return list(props.keys())[:30]
+    return []
+
+
 # ── Test matrix generation ───────────────────────────────────────────────
 
 
@@ -177,7 +204,7 @@ def _generate_bola_tests(endpoints: list[dict[str, Any]]) -> list[dict[str, Any]
     tests: list[dict[str, Any]] = []
     for ep in endpoints:
         id_params = [
-            p for p in ep["parameters"] if id_pattern.search(p["name"]) or "{" in ep["path"]
+            p for p in ep["parameters"] if id_pattern.search(p["name"]) or p.get("in") == "path"
         ]
         if id_params and ep["method"] in ("GET", "PUT", "PATCH", "DELETE"):
             tests.append(
@@ -350,10 +377,8 @@ def api_detect_undocumented(base_url: str, spec_source: str) -> str:
                             continue
                         if isinstance(body, dict):
                             live_keys = set(body.keys())
-                            documented_keys: set[str] = set()
-                            if ep.get("request_body"):
-                                documented_keys = set(ep["request_body"].get("properties", []))
-                            extra = live_keys - documented_keys if documented_keys else set()
+                            documented_keys = set(ep.get("response_properties", []))
+                            extra = live_keys - documented_keys if documented_keys else live_keys
                             if extra:
                                 findings.append(
                                     {

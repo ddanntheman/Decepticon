@@ -142,7 +142,7 @@ _DOCKER_CHECKS: list[tuple[str, str, re.Pattern[str]]] = [
     (
         "docker_latest_tag",
         "Base image uses 'latest' tag or no tag",
-        re.compile(r"^FROM\s+\S+(?::latest\s|$|\s)", re.MULTILINE),
+        re.compile(r"^FROM\s+\S+?:latest(?:\s|$)|^FROM\s+(?!\S*:)\S+(?:\s|$)", re.MULTILINE),
     ),
     (
         "docker_add_instead_copy",

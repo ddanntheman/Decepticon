@@ -275,7 +275,7 @@ def git_find_silent_patches(
             current_file = ""
         elif line.startswith("diff --git"):
             parts = line.split()
-            current_file = parts[-1].lstrip("b/") if len(parts) >= 4 else ""
+            current_file = parts[-1].removeprefix("b/") if len(parts) >= 4 else ""
         elif line.startswith("+") and not line.startswith("+++"):
             if _SANITIZATION_PATTERNS.search(line):
                 added_sanitization.append(line[:120].strip())

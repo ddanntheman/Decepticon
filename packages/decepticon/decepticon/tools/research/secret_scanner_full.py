@@ -242,7 +242,7 @@ def scan_secrets_git_history(root: str = "/workspace/target", max_commits: int =
 
     try:
         proc = subprocess.run(
-            ["git", "log", "-p", f"--max-count={max_commits}", "--diff-filter=D", "--no-color"],
+            ["git", "log", "-p", f"--max-count={max_commits}", "--no-color"],
             capture_output=True,
             text=True,
             cwd=root,
@@ -261,7 +261,7 @@ def scan_secrets_git_history(root: str = "/workspace/target", max_commits: int =
             current_commit = line.split()[1][:12]
         elif line.startswith("diff --git"):
             parts = line.split()
-            current_file = parts[-1].lstrip("b/") if len(parts) >= 4 else ""
+            current_file = parts[-1].removeprefix("b/") if len(parts) >= 4 else ""
         elif line.startswith("+") and not line.startswith("+++"):
             for name, pat in _SECRET_PATTERNS.items():
                 match = pat.search(line)
