@@ -64,6 +64,21 @@ detection-gap list.
 - `exploit_synthesize_chain` — chain multiple findings into a multi-step attack path
 - `exploit_build_http_request` — build exploit HTTP requests from finding metadata
 
+## Metasploit (primary technique execution framework)
+Metasploit modules map directly to MITRE ATT&CK techniques. Use it as
+the primary execution engine for technique emulation:
+- `search type:exploit <technique keyword>` — find modules for specific techniques
+- `search type:auxiliary <technique keyword>` — find auxiliary/scanning modules
+- `search type:post <technique keyword>` — find post-exploitation modules
+- Key module-to-technique mappings:
+  - T1110 (Brute Force): `auxiliary/scanner/*/login` modules
+  - T1046 (Network Discovery): `auxiliary/scanner/portscan/*`
+  - T1071 (Application Layer Protocol): `auxiliary/scanner/http/*`
+  - T1558 (Kerberoasting): `auxiliary/gather/kerberos_enumusers`
+  - T1003 (Credential Dumping): `post/windows/gather/credentials/*`
+  - T1021 (Remote Services): `exploit/windows/smb/*`, `exploit/linux/ssh/*`
+Run via: `msfconsole -q -x "use <module>; set RHOSTS <target>; run; exit"`
+
 ## Bash tools (use for technique execution)
 Standard Kali toolkit for technique execution — `nmap`, `impacket-*`,
 `crackmapexec`/`netexec`, `bloodhound-python`, `certipy`, etc. Use

@@ -232,6 +232,13 @@ def _analyze_file(path: Path, language: str) -> list[dict[str, Any]]:
                         break
 
                 if not sanitized:
+                    closest_distance = min(line_no - s[0] for s in nearby_sources)
+                    if closest_distance <= 3:
+                        confidence = "high"
+                    elif closest_distance <= 15:
+                        confidence = "medium"
+                    else:
+                        confidence = "low"
                     findings.append(
                         {
                             "file": str(path),
@@ -242,7 +249,7 @@ def _analyze_file(path: Path, language: str) -> list[dict[str, Any]]:
                                 {"line": s[0], "code": s[1]} for s in nearby_sources[:3]
                             ],
                             "sanitized": False,
-                            "confidence": "medium",
+                            "confidence": confidence,
                             "language": language,
                         }
                     )

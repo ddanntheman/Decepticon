@@ -62,6 +62,14 @@ versions (`/v1` vs `/v2`), staging hosts, and undocumented routes.
 - `dast_test_endpoints` — automated injection testing of discovered endpoints
 - `dast_test_single` — targeted test of a single endpoint
 
+## Metasploit modules (use for API service exploitation)
+- `auxiliary/scanner/http/http_login` — default credential testing on API endpoints
+- `auxiliary/scanner/http/dir_scanner` — discover undocumented API paths
+- `auxiliary/scanner/http/options` — enumerate allowed HTTP methods per endpoint
+- `search type:exploit <framework> <version>` — check for known exploits against
+  the API framework (Express, Django, Flask, Spring, etc.)
+Run via: `msfconsole -q -x "use <module>; set RHOSTS <target>; run; exit"`
+
 ## Bash tools (use when structured tools don't cover)
 `curl`/`httpie`, `ffuf`/`feroxbuster` (route discovery), `jq` (response
 diffing), `arjun` (param discovery). Use `payload_search` for class

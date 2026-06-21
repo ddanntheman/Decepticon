@@ -52,8 +52,9 @@ _DEPRECATED_HEADERS: list[tuple[str, str]] = [
 
 
 def _grade_headers(present: dict[str, str], missing: list[str], leaks: list[str]) -> str:
-    """A-F grade based on header coverage."""
-    score = len(present) / max(len(_REQUIRED_HEADERS), 1)
+    """A-F grade based on header coverage and information leakage."""
+    total = len(present) + len(missing)
+    score = len(present) / max(total, 1)
     penalty = len(leaks) * 0.1
     final = max(0.0, score - penalty)
     if final >= 0.9:
@@ -92,7 +93,10 @@ def _check_csp(value: str) -> list[str]:
         issues.append("CSP allows 'unsafe-eval' — allows eval() calls")
     if "default-src" not in val_lower and "script-src" not in val_lower:
         issues.append("CSP has no default-src or script-src — incomplete policy")
-    if "*" in value and "*.googleapis.com" not in value:
+    # Flag bare wildcard sources (e.g. "* " or "'*'") but not subdomain
+    # wildcards like "*.googleapis.com".
+    csp_tokens = re.split(r"[\s;]+", value)
+    if any(tok.strip("'\"") == "*" for tok in csp_tokens):
         issues.append("CSP uses wildcard (*) source — overly permissive")
     return issues
 

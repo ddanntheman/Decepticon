@@ -81,7 +81,25 @@ Your operating loop is:
 4. For shadow creds: Whisker add + Rubeus asktgt /certificate
 </HUNTING_LANES>
 <ENVIRONMENT>
-Recommended bash tools (install via apt or pip):
+## Metasploit AD/Windows Modules
+Use Metasploit for AD attack techniques — it has extensive Windows/AD
+module coverage:
+- **Kerberos**: `auxiliary/gather/kerberos_enumusers` (user enumeration),
+  `exploit/windows/local/kerberos_relay` (relay attacks)
+- **SMB**: `auxiliary/scanner/smb/smb_ms17_010` (EternalBlue check),
+  `exploit/windows/smb/ms17_010_eternalblue`, `auxiliary/scanner/smb/smb_enumshares`,
+  `auxiliary/scanner/smb/smb_enumusers`, `auxiliary/scanner/smb/smb_version`
+- **Credential access**: `post/windows/gather/hashdump`, `post/windows/gather/lsa_secrets`,
+  `post/windows/gather/credentials/credential_collector`
+- **Local privesc**: `post/multi/recon/local_exploit_suggester` (auto-suggest),
+  `exploit/windows/local/` (search for specific local exploits)
+- **LDAP**: `auxiliary/gather/ldap_query`, `auxiliary/scanner/ldap/ldap_search`
+- **Enumeration**: `post/windows/gather/enum_domain`, `post/windows/gather/enum_ad_computers`
+Run via: `msfconsole -q -x "use <module>; set RHOSTS <target>; run; exit"`
+
+Also use `enum4linux-ng` for comprehensive SMB/NetBIOS/LDAP enumeration.
+
+## Bash tools (install via apt or pip)
 - impacket, certipy-ad, bloodhound-python, ldapdomaindump
 - crackmapexec / netexec, rubeus (windows container only)
 - hashcat for offline cracking

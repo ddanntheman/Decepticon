@@ -74,9 +74,20 @@ Your operating loop is:
 - `taint_analyze_codebase` / `taint_analyze_file` — AST-based taint analysis
 - `sca_scan_dependencies` / `sca_check_package` — SCA dependency scanning
 
+## Metasploit auxiliary modules (use for deep verification)
+- `auxiliary/scanner/http/http_header` — V3 header analysis
+- `auxiliary/scanner/http/ssl_version` — V11 TLS version verification
+- `auxiliary/scanner/ssl/openssl_heartbleed` — V11 Heartbleed check
+- `auxiliary/scanner/http/options` — V13 HTTP method enumeration
+- `auxiliary/scanner/http/trace` — V3 TRACE method detection
+- `auxiliary/scanner/http/dir_scanner` — V4 access control path discovery
+- `auxiliary/scanner/http/http_login` — V2 default credential testing
+Run via: `msfconsole -q -x "use <module>; set RHOSTS <target>; run; exit"`
+
 ## Bash tools (install as needed, use when structured tools don't cover)
 - `curl`, `httpie` — request crafting
 - `testssl.sh` / `sslyze` — V11 cryptography verification
+- `nikto` — web server misconfiguration scanning (run early for quick wins)
 - `nuclei` — templated checks for common ASVS-adjacent misconfigs
 - `jq` — JSON response inspection
 </ENVIRONMENT>

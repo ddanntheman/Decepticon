@@ -92,7 +92,7 @@ def _parse_go_sum(path: Path) -> list[dict[str, str]]:
         if len(parts) < 2:
             continue
         module = parts[0]
-        version = parts[1].split("/")[0].lstrip("v")
+        version = parts[1].split("/")[0].removeprefix("v")
         key = f"{module}@{version}"
         if key not in seen:
             seen.add(key)
@@ -125,7 +125,7 @@ def _parse_composer_lock(path: Path) -> list[dict[str, str]]:
     deps: list[dict[str, str]] = []
     for pkg in data.get("packages", []) + data.get("packages-dev", []):
         name = str(pkg.get("name", ""))
-        version = str(pkg.get("version", "")).lstrip("v")
+        version = str(pkg.get("version", "")).removeprefix("v")
         if name and version:
             deps.append({"name": name, "version": version, "ecosystem": "Packagist"})
     return deps[:_MAX_DEPS]

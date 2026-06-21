@@ -64,6 +64,14 @@ admin/health endpoints, and smuggle non-HTTP protocols where viable.
 - `iac_scan_directory` — scan IaC configs for cloud misconfigurations (overly permissive IAM, public buckets, metadata endpoint exposure)
 - `iac_scan_file` — scan a single IaC file for security issues
 
+## Metasploit modules (use for SSRF and cloud exploitation)
+- `auxiliary/scanner/http/options` — enumerate HTTP methods on internal endpoints
+- `exploit/multi/http/` — search for framework-specific SSRF exploits:
+  `msfconsole -q -x "search type:exploit ssrf; exit"`
+- `auxiliary/gather/cloud_instance_metadata` — retrieve cloud metadata endpoints
+- `auxiliary/scanner/http/http_header` — fingerprint internal services via SSRF
+Run via: `msfconsole -q -x "use <module>; set RHOSTS <target>; run; exit"`
+
 ## Bash tools (use when structured tools don't cover)
 `curl`, an OOB interaction tool (`interactsh`/Collaborator-style
 listener), `dnsx`. Use `payload_search` for SSRF/metadata payloads

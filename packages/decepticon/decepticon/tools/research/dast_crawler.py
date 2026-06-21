@@ -133,11 +133,39 @@ def _crawl(
     except httpx.HTTPError as exc:
         errors.append(f"Client error: {exc}")
 
+    # Build testable endpoints from forms: each form has an action URL,
+    # HTTP method, and named inputs that can be fuzzed.
+    testable: list[dict[str, Any]] = []
+    for form in forms:
+        testable.append(
+            {
+                "url": form["action"],
+                "method": form["method"],
+                "params": [inp["name"] for inp in form.get("inputs", [])],
+            }
+        )
+
+    # Extract query-string parameter names from crawled URLs so they
+    # are also available for injection testing.
+    for ep in endpoints:
+        parsed = urlparse(ep["url"])
+        if parsed.query:
+            param_names = [p.split("=", 1)[0] for p in parsed.query.split("&") if "=" in p]
+            if param_names:
+                testable.append(
+                    {
+                        "url": f"{parsed.scheme}://{parsed.netloc}{parsed.path}",
+                        "method": "GET",
+                        "params": param_names,
+                    }
+                )
+
     return {
         "base_url": base_url,
         "pages_crawled": len(visited),
         "endpoints": endpoints,
         "forms": forms[:50],
+        "testable_endpoints": testable[:50],
         "errors": errors[:10],
     }
 
@@ -243,7 +271,8 @@ def dast_crawl(
 
     Follows links within the same host, extracts HTML forms with their
     inputs, and builds an endpoint inventory. Returns discovered pages,
-    forms, and parameters — use as input for ``dast_test_endpoints``.
+    forms, and a ``testable_endpoints`` array (with ``url``, ``method``,
+    ``params``) ready to pass directly to ``dast_test_endpoints``.
     """
     if not base_url.startswith(("http://", "https://")):
         return _json(
@@ -261,10 +290,10 @@ def dast_test_endpoints(
 ) -> str:
     """Test discovered endpoints for injection vulnerabilities.
 
-    Takes a JSON array of endpoints (from ``dast_crawl`` output) where
-    each endpoint has ``url``, ``method``, and a list of parameter names
-    (``params``). Tests each parameter against the selected vulnerability
-    types using non-destructive payloads.
+    Takes a JSON array of testable endpoints where each entry has
+    ``url``, ``method``, and ``params`` (list of parameter names).
+    Use the ``testable_endpoints`` field from ``dast_crawl`` output
+    directly.
 
     Supported vuln_types: sqli, xss, path_traversal, command_injection
     """

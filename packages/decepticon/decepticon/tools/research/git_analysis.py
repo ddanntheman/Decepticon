@@ -77,20 +77,13 @@ def git_hot_files(root: str = "/workspace/target", days: int = 180, top_k: int =
     if not Path(root, ".git").is_dir():
         return _json({"error": "not_a_git_repo", "detail": f"{root} has no .git directory"})
 
-    code, stdout, stderr = _run_git(
-        ["log", f"--since={days} days ago", "--pretty=format:%H", "--name-only"],
-        cwd=root,
-    )
-    if code != 0:
-        return _json({"error": "git_error", "detail": stderr[:300]})
-
     # Count security-relevant commits per file
     file_sec_count: dict[str, int] = {}
     file_total_count: dict[str, int] = {}
     current_msg_is_security = False
     in_files = False
 
-    code2, log_out, _ = _run_git(
+    code, log_out, stderr = _run_git(
         [
             "log",
             f"--since={days} days ago",
@@ -99,8 +92,8 @@ def git_hot_files(root: str = "/workspace/target", days: int = 180, top_k: int =
         ],
         cwd=root,
     )
-    if code2 != 0:
-        return _json({"error": "git_error", "detail": "failed to read git log"})
+    if code != 0:
+        return _json({"error": "git_error", "detail": stderr[:300]})
 
     for line in log_out.splitlines():
         line = line.strip()

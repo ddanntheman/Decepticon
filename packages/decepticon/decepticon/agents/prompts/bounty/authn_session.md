@@ -61,8 +61,16 @@ concurrent-session and cookie-flag (HttpOnly/Secure/SameSite) issues.
 - `dast_test_endpoints` — automated testing of auth endpoints for injection/bypass
 - `dast_test_single` — targeted test of a single auth endpoint
 
+## Metasploit modules (use for credential/auth testing)
+- `auxiliary/scanner/http/http_login` — brute-force/default-credential testing against login forms
+- `auxiliary/scanner/http/ssl_version` — TLS version/cipher verification
+- `auxiliary/scanner/ssl/openssl_heartbleed` — Heartbleed memory leak check
+- `auxiliary/scanner/http/options` — HTTP method enumeration (OPTIONS/TRACE)
+Run via: `msfconsole -q -x "use <module>; set RHOSTS <target>; run; exit"`
+
 ## Bash tools (use when structured tools don't cover)
 `curl`/`httpie`, `jwt_tool`, `hashcat`/`john` (secret cracking),
-`openssl` (cert/sig work). Use `payload_search` and `h1_search` for
-disclosed ATO chains.
+`sslyze`/`sslscan` (TLS/SSL analysis), `openssl` (cert/sig work),
+`hydra` (targeted credential testing). Use `payload_search` and
+`h1_search` for disclosed ATO chains.
 </ENVIRONMENT>
