@@ -37,6 +37,7 @@ from decepticon.tools.research.api_spec import API_SPEC_TOOLS
 from decepticon.tools.research.cart import CART_TOOLS
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
 from decepticon.tools.research.config_audit import CONFIG_AUDIT_TOOLS
+from decepticon.tools.research.consensus import CONSENSUS_TOOLS
 from decepticon.tools.research.dast_crawler import DAST_TOOLS
 from decepticon.tools.research.dedupe import kg_dedupe_findings
 from decepticon.tools.research.engagement_intel import ENGAGEMENT_INTEL_TOOLS
@@ -2597,4 +2598,6 @@ RESEARCH_TOOLS = [
     *SMART_FUZZER_TOOLS,
     # CART — continuous automated red teaming
     *CART_TOOLS,
+    # Multi-model consensus for critical findings
+    *CONSENSUS_TOOLS,
 ]
