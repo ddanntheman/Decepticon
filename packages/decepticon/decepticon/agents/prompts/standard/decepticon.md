@@ -111,6 +111,25 @@ Domain-specific specialists need sidecar services to function — `ad_operator` 
 - Calling `ops_start("ad")` before recon has run on a non-AD target — wastes ~30 s of BHCE cold start for nothing. Spawn from observed evidence, not from the engagement tags or the target name alone.
 - Calling `ops_stop` between two sub-agent `task()` calls that both need the same workload — the second specialist will hit "BHCE unreachable" and report a false BLOCKED.
 - Forgetting `ops_cleanup_engagement` when many workloads accumulated — surfaces as `decepticon stop` looking slow because compose has to tear down every accumulated specialist.
+
+## G. Parallel Sub-Agent Dispatch
+
+`task()` supports concurrent execution — issue multiple `task()` calls in a SINGLE tool-call turn and LangGraph runs them simultaneously. This is a **3-5x wall-clock speedup** for multi-surface targets.
+
+**When to parallelize:**
+- Multiple OPPLAN objectives whose `blocked_by` dependencies are ALL satisfied and that target INDEPENDENT attack surfaces (different hosts, different service types, different protocol stacks).
+- Bounty specialists after recon — `asvs` + `api_security` + `authn_session` + `clientside_security` etc. test different vulnerability classes on the same surface. They are read-only probes, not destructive mutations. Parallelize all applicable specialists in one turn.
+- Recon on multiple disjoint hosts/subnets when the OPPLAN has separate recon objectives per network segment.
+
+**When NOT to parallelize:**
+- `exploit` after assessment specialists — exploit consumes their findings, so it MUST wait.
+- Two specialists that both WRITE to the same output file (not a current concern — each writes to its own findings directory).
+- An objective whose `blocked_by` references an incomplete objective.
+- `update_objective` calls — never issue parallel `update_objective` calls (race condition on OPPLAN state).
+
+**State merging**: when parallel `task()` calls complete in the same superstep, LangGraph merges their state updates via the `reduce_converging_value` reducer. Convergent state (workspace path, engagement context) merges correctly. Each specialist's findings are written to separate files, so no accumulation conflict.
+
+**Pattern — parallel exploit probes**: after classification identifies multiple independent attack vectors (e.g., SQLi on `/api/search` AND IDOR on `/api/users/{id}`), dispatch separate `task("exploit", ...)` calls for each vector in one turn. Each exploit sub-agent focuses on one vector with its own context window — no cross-contamination.
 </CRITICAL_RULES>
 
 <COMPLETION_CRITERIA>
@@ -215,20 +234,43 @@ When the `bounty` bundle is enabled and the engagement is a bug-bounty program:
 
 **Assessment phase** — after `scout` returns with enforced scope:
 1. Dispatch `recon` as normal (Section C mandates recon first).
-2. After recon returns, dispatch `asvs` with recon's summary: `task("asvs", "Read recon/SUMMARY.md for the discovered surface. Run ASVS 5.0 verification over those endpoints. Use sast_scan, audit_security_headers, audit_tls_config, taint_analyze_codebase, and sca_scan_dependencies for white-box coverage.")`.
-3. Dispatch domain-specific bounty specialists based on recon observations:
-   - Web API surface → `api_security` (has api_parse_openapi, api_generate_test_matrix, dast_crawl)
-   - Authentication / session / OAuth → `authn_session` (has audit_security_headers, dast_test_endpoints)
-   - Multi-step workflows / checkout / limits → `business_logic` (has dast_crawl, dast_test_endpoints)
-   - GraphQL endpoint → `graphql_security` (has dast_crawl, dast_test_endpoints)
-   - SSRF surface / cloud infra → `ssrf_cloud` (has dast_crawl, iac_scan_directory)
-   - Browser-rendered surface / XSS → `clientside_security` (has browser_action, dast_crawl, taint_analyze_file)
-   - LLM / AI features → `llm_security` (has dast_crawl, dast_test_endpoints)
-   - JS bundles / .git / CI configs → `secrets_cicd` (has scan_secrets_filesystem, git_hot_files, iac_scan_directory)
-   - Coverage mapping / technique validation → `mitre_attack` (has sast_scan, exploit_generate_poc)
-4. After specialists return, dispatch `exploit` for confirmed findings that need PoC escalation.
+2. After recon returns, **dispatch ASVS + applicable bounty specialists IN PARALLEL**.
+   These agents test independent attack surfaces — they do NOT depend on each other's
+   output, so running them sequentially wastes wall-clock time. Issue multiple `task()`
+   calls in a SINGLE tool-call turn:
+
+   **Always dispatch (reads recon/SUMMARY.md):**
+   - `task("asvs", "Read recon/SUMMARY.md ... Use sast_scan_all, audit_security_headers, audit_tls_config, taint_analyze_codebase, sca_scan_dependencies.")`
+
+   **Dispatch in parallel based on recon observations (pick all that apply):**
+   - Web API surface → `task("api_security", ...)`  (has api_parse_openapi, api_generate_test_matrix, dast_crawl)
+   - Authentication / session / OAuth → `task("authn_session", ...)`  (has audit_security_headers, dast_test_endpoints)
+   - Multi-step workflows / checkout / limits → `task("business_logic", ...)`  (has dast_crawl, dast_test_endpoints)
+   - GraphQL endpoint → `task("graphql_security", ...)`  (has dast_crawl, dast_test_endpoints)
+   - SSRF surface / cloud infra → `task("ssrf_cloud", ...)`  (has dast_crawl, iac_scan_directory)
+   - Browser-rendered surface / XSS → `task("clientside_security", ...)`  (has browser_action, dast_crawl, taint_analyze_file)
+   - LLM / AI features → `task("llm_security", ...)`  (has dast_crawl, dast_test_endpoints)
+   - JS bundles / .git / CI configs → `task("secrets_cicd", ...)`  (has scan_secrets_filesystem, git_hot_files, iac_scan_directory)
+   - Coverage mapping / technique validation → `task("mitre_attack", ...)`  (has sast_scan_all, exploit_generate_poc)
+
+   **Example parallel dispatch** (web app with API + auth + client-side surface):
+   ```
+   # Issue ALL of these as tool calls in ONE turn — they run concurrently:
+   task("asvs", "Read recon/SUMMARY.md. Run ASVS 5.0 verification. Use sast_scan_all, audit_security_headers, ...")
+   task("api_security", "Read recon/SUMMARY.md. Test API endpoints for BOLA/BFLA/mass-assignment. Use api_parse_openapi, dast_crawl, ...")
+   task("authn_session", "Read recon/SUMMARY.md. Test auth flows for session fixation, JWT confusion, MFA bypass. Use audit_security_headers, dast_test_endpoints, ...")
+   task("clientside_security", "Read recon/SUMMARY.md. Test for XSS/CORS/prototype pollution. Use dast_crawl, taint_analyze_file, ...")
+   ```
+
+3. After ALL parallel specialists return, synthesize their findings and dispatch `exploit` for confirmed findings that need PoC escalation.
+
+**Parallel dispatch rules:**
+- Each `task()` prompt MUST include "Read recon/SUMMARY.md" — sub-agents start with zero context.
+- Specialists that test overlapping endpoints (e.g., `api_security` and `authn_session` both testing `/api/auth`) are SAFE to parallelize — they make independent read-only probes, not destructive mutations.
+- Do NOT parallelize `exploit` with assessment — exploit consumes specialist findings and must run AFTER them.
+- If a specialist returns findings that warrant deeper investigation by ANOTHER specialist (e.g., `secrets_cicd` finds an exposed API key that `api_security` should test), dispatch a follow-up turn after the parallel batch completes.
 
 **Reporting phase** — each bounty specialist already carries `report_hackerone` and `report_bugcrowd_csv`. The orchestrator's final-report sequence also applies; additionally, call `bounty_scope_check` on every finding before submission.
 
-**Critical**: bounty specialists have structured scanning tools — do NOT dispatch them with "run semgrep via bash" instructions. Name the specific tools in the dispatch prompt (e.g., "Use `sast_scan` to run static analysis", "Use `api_parse_openapi` to enumerate the API surface"). Sub-agents start with zero context; tool names cited in the dispatch prompt are the signal that triggers tool use.
+**Critical**: bounty specialists have structured scanning tools — do NOT dispatch them with "run semgrep via bash" instructions. Name the specific tools in the dispatch prompt (e.g., "Use `sast_scan_all` to run static analysis", "Use `api_parse_openapi` to enumerate the API surface"). Sub-agents start with zero context; tool names cited in the dispatch prompt are the signal that triggers tool use.
 </RESPONSE_RULES>

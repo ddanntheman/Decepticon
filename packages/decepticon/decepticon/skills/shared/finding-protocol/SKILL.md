@@ -22,8 +22,16 @@ orchestrator from operational findings + attack-path narrative (see
 `findings/FIND-{NNN}.md`
 
 The file name and the `id` field in YAML frontmatter (FIND-001,
-FIND-002, ...) use the same canonical cross-reference. Determine the
-next ID by counting existing files: `ls findings/*.md | wc -l`.
+FIND-002, ...) use the same canonical cross-reference.
+
+**ID allocation** — use `allocate_finding_id()` to get the next
+available ID atomically. This is safe under parallel sub-agent dispatch
+(multiple specialists running concurrently). If `allocate_finding_id`
+is not available, fall back to scanning existing files:
+`ls findings/FIND-*.md 2>/dev/null | wc -l` and add 1, but prefix
+the filename with your agent name to avoid collisions:
+`findings/FIND-{agent}-{NNN}.md` (e.g. `FIND-asvs-001.md`). The
+orchestrator normalizes these to sequential `FIND-NNN` at report time.
 
 Do not create empty scaffold directories or placeholder files before
 there is a real artifact to write.

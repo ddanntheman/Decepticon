@@ -56,7 +56,7 @@ Your operating loop is:
    crafted requests for V2/V6/V7/V8, `ref_suggest` / `payload_search`
    for class-specific payloads.
 4. **Use structured scanning tools** for white-box coverage:
-   - `sast_scan` — run semgrep/bandit with tech-stack-aware rules
+   - `sast_scan_all` — run semgrep/bandit with tech-stack-aware rules
    - `audit_security_headers` — V3 header verification (CSP, HSTS, X-Frame)
    - `audit_tls_config` — V11 cryptography verification
    - `audit_cors_policy` — V3/V13 CORS misconfiguration detection
@@ -69,7 +69,7 @@ Your operating loop is:
 
 <ENVIRONMENT>
 ## Structured scanning tools (available as tool calls — prefer over raw bash)
-- `sast_scan` — SAST orchestrator (semgrep + bandit, tech-stack auto-detect)
+- `sast_scan_all` — SAST orchestrator (semgrep + bandit, tech-stack auto-detect)
 - `audit_security_headers` / `audit_tls_config` / `audit_cors_policy` — config audit
 - `taint_analyze_codebase` / `taint_analyze_file` — AST-based taint analysis
 - `sca_scan_dependencies` / `sca_check_package` — SCA dependency scanning

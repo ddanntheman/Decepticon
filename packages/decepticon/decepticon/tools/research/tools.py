@@ -19,6 +19,7 @@ import asyncio
 import hashlib
 import json
 import re
+import threading
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -2484,6 +2485,48 @@ def kg_ingest_scan_findings(findings_json: str) -> str:
         return _json({"ingested": added, "stats": graph.stats()})
 
 
+# ── Parallel-safe finding ID allocation ──────────────────────────────────
+
+_FINDING_LOCK = threading.Lock()
+
+
+@tool
+def allocate_finding_id(workspace: str = "/workspace") -> str:
+    """Atomically allocate the next FIND-NNN ID for a new finding.
+
+    Scans ``{workspace}/findings/FIND-*.md`` under a process-wide lock so
+    parallel sub-agents cannot collide on the same ID. Returns JSON with
+    the allocated ``id`` (e.g. ``"FIND-003"``), the ``path`` to write to,
+    and the ``next_id`` integer.
+
+    Call this BEFORE writing ``findings/FIND-{NNN}.md`` to guarantee a
+    unique filename even when multiple specialists run concurrently.
+    """
+    findings_dir = Path(workspace) / "findings"
+    with _FINDING_LOCK:
+        findings_dir.mkdir(parents=True, exist_ok=True)
+        highest = 0
+        for f in findings_dir.glob("FIND-*.md"):
+            stem = f.stem
+            suffix = stem.split("-", 1)[1] if "-" in stem else ""
+            try:
+                n = int(suffix)
+            except ValueError:
+                continue
+            if n > highest:
+                highest = n
+        next_id = highest + 1
+        placeholder = findings_dir / f"FIND-{next_id:03d}.md"
+        placeholder.touch(exist_ok=True)
+    return _json(
+        {
+            "id": f"FIND-{next_id:03d}",
+            "path": str(placeholder),
+            "next_id": next_id,
+        }
+    )
+
+
 # ── Public tool list ────────────────────────────────────────────────────
 
 RESEARCH_TOOLS = [
@@ -2524,6 +2567,7 @@ RESEARCH_TOOLS = [
     validate_finding,
     scan_secrets,
     detect_tech_stack,
+    allocate_finding_id,
     *SCANNER_TOOLS,
     *PATCH_TOOLS,
     *OSINT_TOOLS,
