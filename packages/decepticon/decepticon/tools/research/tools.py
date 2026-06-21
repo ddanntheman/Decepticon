@@ -38,6 +38,7 @@ from decepticon.tools.research.chain import critical_path_score, plan_chains, pr
 from decepticon.tools.research.config_audit import CONFIG_AUDIT_TOOLS
 from decepticon.tools.research.dast_crawler import DAST_TOOLS
 from decepticon.tools.research.dedupe import kg_dedupe_findings
+from decepticon.tools.research.engagement_intel import ENGAGEMENT_INTEL_TOOLS
 from decepticon.tools.research.exploit_synthesis import EXPLOIT_TOOLS
 from decepticon.tools.research.git_analysis import GIT_ANALYSIS_TOOLS
 from decepticon.tools.research.health import backend_health
@@ -2582,4 +2583,6 @@ RESEARCH_TOOLS = [
     *IAC_TOOLS,
     *EXPLOIT_TOOLS,
     *DAST_TOOLS,
+    # Cross-session engagement intelligence + OSINT feeds
+    *ENGAGEMENT_INTEL_TOOLS,
 ]

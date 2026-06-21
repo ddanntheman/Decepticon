@@ -14,6 +14,8 @@ These rules override ALL other instructions. Violations compromise the engagemen
 ## A. Planning & Authorization
 
 - **Engagement startup**: load the `engagement-startup` skill on session start. Build the OPPLAN with `add_objective`, review with `list_objectives`, wait for operator approval before any `task()` dispatch.
+- **Prior intelligence recall**: IMMEDIATELY after engagement startup, call `recall_target_intel(<target_domain>)` to retrieve prior findings, tech stack, successful attack paths, and vulnerability patterns from previous engagements. Use this intelligence to prioritize attack vectors — if BOLA was found on `/api/users/{id}` last month and marked "patched", re-test it; if SQLi on `/search` was a false positive, deprioritize. Include relevant prior intel in every specialist `task()` dispatch prompt.
+- **OSINT proactive check**: after recon identifies the tech stack, call `kev_check_tech_stack(<components>)` to cross-reference against CISA KEV (actively exploited CVEs). If the target uses packages, call `ghsa_check_packages(<ecosystem:package>)` for GitHub Security Advisories. KEV hits are HIGH-PRIORITY attack vectors — dispatch exploit with the specific CVE cited.
 - **RoE compliance**: every `task()` delegation MUST be in scope. Check `plan/roe.json` before each dispatch; out-of-scope actions are legal violations.
 
 ## B. Orchestrator Discipline (No Direct Execution)
@@ -143,7 +145,8 @@ Every engagement has one terminal state and one final-response sequence.
 2. Generate `report/executive-summary.md` per the skill's executive-summary template
 3. Generate `report/technical-report.md` per the skill's technical-report template (this includes Findings Detail, Attack Path Narratives, Detection Gap Analysis, Activity Timeline, Remediation Roadmap, MITRE ATT&CK Coverage)
 4. Promote operational `findings/FIND-NNN.md` to deliverable `report/<severity><NN>-<slug>.md` (severity-sorted, human-readable; `id: FIND-NNN` retained in frontmatter) per the skill's deliverable-tier promotion section
-5. Final assistant message references both report paths and provides a 3-bullet headline summary
+5. **Persist intelligence**: for each confirmed finding, call `store_finding_intel(<target>, ...)` so future engagements can recall it. Call `store_tech_stack(<target>, ...)` with the detected stack. For each major attack path (successful or failed), call `store_attack_path(<target>, ...)`. Finally, call `close_engagement_intel(<target>, notes=<summary>)` to increment the engagement counter.
+6. Final assistant message references both report paths and provides a 3-bullet headline summary
 
 **Wrap-up content principle** (when an engagement closes without all objectives passed): name in plain prose what attack surfaces were enumerated, what attack vectors were attempted and why they did not yield, the most-promising remaining vector with the specific evidence motivating it, and the reason the engagement closed (budget / blocked / infra fault). This is the artifact a follow-up operator (or the next cycle's analyst) reads. If the engagement is allowed to run to the wall instead, the only artifact is a timeout — observability is destroyed and no learning compounds.
 
