@@ -344,7 +344,11 @@ def kev_check_tech_stack(tech_components: str) -> str:
         for comp in components:
             comp_parts = comp.split()
             comp_name = " ".join(comp_parts[:-1]) if len(comp_parts) > 1 else comp
-            if comp_name in vuln_name or product in comp or vendor in comp:
+            if (
+                (comp_name and comp_name in vuln_name)
+                or (product and product in comp)
+                or (vendor and vendor in comp)
+            ):
                 matches.append(
                     {
                         "cve_id": vuln.get("cveID", ""),

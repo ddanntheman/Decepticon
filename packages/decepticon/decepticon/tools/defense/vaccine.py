@@ -23,15 +23,11 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from decepticon.tools.research._state import _json, _load
-from decepticon_core.types.kg import Edge, EdgeKind, KnowledgeGraph, Node, NodeKind
+from decepticon.tools.research._state import _json, graph_transaction
+from decepticon_core.types.kg import Edge, EdgeKind, Node, NodeKind
 from decepticon_core.utils.logging import get_logger
 
 log = get_logger("defense.vaccine")
-
-
-def _graph() -> KnowledgeGraph:
-    return _load()
 
 
 def _vaccine_dir(workspace: str = "/workspace") -> Path:
@@ -176,26 +172,26 @@ def vaccine_record_defense(
     record["defense_actions"].append(action)
     record["status"] = "defended"
 
-    graph = _graph()
-    defense_key = f"defense::{finding_id}::{len(record['defense_actions'])}"
-    defense_node = graph.upsert_node(
-        Node.make(
-            NodeKind.DEFENSE_ACTION,
-            f"[{action_type}] {description[:80]}",
-            key=defense_key,
-            action_type=action_type,
-            applied_by=applied_by,
+    with graph_transaction() as graph:
+        defense_key = f"defense::{finding_id}::{len(record['defense_actions'])}"
+        defense_node = graph.upsert_node(
+            Node.make(
+                NodeKind.DEFENSE_ACTION,
+                f"[{action_type}] {description[:80]}",
+                key=defense_key,
+                action_type=action_type,
+                applied_by=applied_by,
+            )
         )
-    )
 
-    finding_nodes = [
-        n
-        for n in graph.by_kind(NodeKind.FINDING)
-        if finding_id.lower() in (n.label or "").lower()
-        or finding_id.lower() in (n.key or "").lower()
-    ]
-    for fn in finding_nodes:
-        graph.upsert_edge(Edge.make(defense_node.id, fn.id, EdgeKind.MITIGATES, weight=0.8))
+        finding_nodes = [
+            n
+            for n in graph.by_kind(NodeKind.FINDING)
+            if finding_id.lower() in (n.label or "").lower()
+            or finding_id.lower() in (n.key or "").lower()
+        ]
+        for fn in finding_nodes:
+            graph.upsert_edge(Edge.make(defense_node.id, fn.id, EdgeKind.MITIGATES, weight=0.8))
 
     _save_vaccine_record(record, workspace)
     return _json(
@@ -245,25 +241,25 @@ def vaccine_verify(
     else:
         record["status"] = "defense_failed"
 
-    graph = _graph()
-    verify_key = f"verification::{finding_id}::{len(record['verifications'])}"
-    verify_node = graph.upsert_node(
-        Node.make(
-            NodeKind.VERIFICATION,
-            f"[{'BLOCKED' if blocked else 'BYPASSED'}] {reattack_result[:80]}",
-            key=verify_key,
-            result="blocked" if blocked else "bypassed",
+    with graph_transaction() as graph:
+        verify_key = f"verification::{finding_id}::{len(record['verifications'])}"
+        verify_node = graph.upsert_node(
+            Node.make(
+                NodeKind.VERIFICATION,
+                f"[{'BLOCKED' if blocked else 'BYPASSED'}] {reattack_result[:80]}",
+                key=verify_key,
+                result="blocked" if blocked else "bypassed",
+            )
         )
-    )
 
-    finding_nodes = [
-        n
-        for n in graph.by_kind(NodeKind.FINDING)
-        if finding_id.lower() in (n.label or "").lower()
-        or finding_id.lower() in (n.key or "").lower()
-    ]
-    for fn in finding_nodes:
-        graph.upsert_edge(Edge.make(verify_node.id, fn.id, EdgeKind.VERIFIES, weight=0.9))
+        finding_nodes = [
+            n
+            for n in graph.by_kind(NodeKind.FINDING)
+            if finding_id.lower() in (n.label or "").lower()
+            or finding_id.lower() in (n.key or "").lower()
+        ]
+        for fn in finding_nodes:
+            graph.upsert_edge(Edge.make(verify_node.id, fn.id, EdgeKind.VERIFIES, weight=0.9))
 
     _save_vaccine_record(record, workspace)
     return _json(

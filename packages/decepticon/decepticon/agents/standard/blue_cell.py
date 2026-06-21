@@ -10,13 +10,17 @@ deliverable. See ``docs/features/blue-cell.md``.
 
 Key design choices — enforced by the tool surface, not just the prompt:
 
-- **Read-only at runtime.** No ``bash`` tool, no ``SandboxNotification`` slot
+- **No ``bash`` tool**, no ``SandboxNotification`` slot
   (``SLOTS_PER_ROLE["blue_cell"]`` maps to ``_BASE_SLOTS``, like ``detector``).
   Blue Cell observes the engagement; it never attacks.
 - **No ``kg_add_node`` / ``kg_add_edge``.** Detections are recorded
   deterministically by ``blue_cell_scan`` (the matcher decides what fired) —
   the agent cannot fabricate detection coverage. It gets the read-only KG
   query subset to inspect Findings and narrate the gap report.
+- **Vaccine loop tools** (``vaccine_generate_brief``, ``vaccine_record_defense``,
+  ``vaccine_verify``, ``vaccine_status``) are the exception: they write
+  ``DefenseAction`` and ``Verification`` nodes to the KG via
+  ``graph_transaction``, closing the attack-defend-verify loop.
 
 Library API
 -----------
@@ -51,10 +55,9 @@ from decepticon.tools.defense.vaccine import VACCINE_TOOLS
 from decepticon.tools.research.tools import kg_neighbors, kg_query, kg_stats
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
-# Name-keyed baseline tools. Read-only by construction: the detection-coverage
-# scanner + Defense Brief deliverables plus the KG query subset — no bash, no
-# kg_add_node/kg_add_edge. Vaccine tools are included for the Offensive
-# Vaccine loop (generate remediation briefs, record defenses, verify).
+# Name-keyed baseline tools. Detection-coverage scanner + Defense Brief
+# deliverables + KG read-only query subset + Vaccine loop tools (the
+# only KG-write surface — via graph_transaction, not raw kg_add_*).
 _STANDARD_TOOLS: dict[str, Any] = {
     "blue_cell_scan": blue_cell_scan,
     "defense_brief": defense_brief,
