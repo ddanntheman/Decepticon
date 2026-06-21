@@ -270,8 +270,11 @@ _OPERATIONAL_ROLES = {
     "cloud_hunter",
     "ad_operator",
     "phisher",
-    "forensicator",
-    "osint_operator",
+    # NOTE: forensicator and osint_operator are intentionally excluded.
+    # forensicator is read-only/analysis-only ("NEVER attack, modify a live
+    # host"); osint_operator is passive-only ("NEVER send a packet to the
+    # target's infrastructure"). The _MISSION_DIRECTIVE and _KALI_ENVIRONMENT
+    # cross-cutting prompts would contradict their agent-specific rules.
     "mobile_operator",
     "iot_operator",
     "ics_operator",
