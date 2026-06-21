@@ -7,14 +7,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, patch
-
-import httpx
-import pytest
 
 from decepticon.tools.research import api_spec as asp
-
 
 _SAMPLE_SPEC_V3 = {
     "openapi": "3.0.0",

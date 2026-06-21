@@ -7,10 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 from unittest.mock import patch
-
-import pytest
 
 from decepticon.tools.research import git_analysis as ga
 

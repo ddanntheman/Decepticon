@@ -12,11 +12,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import httpx
-import pytest
-
 from decepticon.tools.research import sca
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 

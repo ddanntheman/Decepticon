@@ -8,15 +8,10 @@ degradation when scanner binaries are unavailable.
 from __future__ import annotations
 
 import json
-import textwrap
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from decepticon.tools.research import sast_orchestrator as so
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -64,7 +59,7 @@ class TestDetectStack:
         )
         result = so._detect_stack(root)
         assert result["primary_language"] == "python"
-        assert any(l["language"] == "python" for l in result["languages"])
+        assert any(entry["language"] == "python" for entry in result["languages"])
 
     def test_js_project_with_framework(self, tmp_path: Path) -> None:
         root = _make_tree(
@@ -95,7 +90,7 @@ class TestDetectStack:
         result = so._detect_stack(root)
         assert result["primary_language"] == "python"
         # node_modules js files should not be counted
-        lang_map = {l["language"]: l["file_count"] for l in result["languages"]}
+        lang_map = {entry["language"]: entry["file_count"] for entry in result["languages"]}
         assert lang_map.get("javascript", 0) == 0
 
 

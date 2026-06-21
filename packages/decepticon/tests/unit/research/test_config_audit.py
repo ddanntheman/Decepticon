@@ -8,14 +8,11 @@ flag auditing, and CORS policy analysis.
 from __future__ import annotations
 
 import json
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from decepticon.tools.research import config_audit as ca
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
