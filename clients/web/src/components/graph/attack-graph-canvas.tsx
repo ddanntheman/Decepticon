@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -16,8 +16,9 @@ import "@xyflow/react/dist/style.css";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Network } from "lucide-react";
+import { Network, RefreshCw } from "lucide-react";
 import { GraphNode } from "./graph-node";
+import { Button } from "@/components/ui/button";
 
 const nodeTypes = { custom: GraphNode };
 
@@ -25,6 +26,7 @@ interface AttackGraphCanvasProps {
   engagementId: string;
   mockNodes?: Node[];
   mockEdges?: Edge[];
+  autoRefreshMs?: number;
 }
 
 function styleEdges(edges: Edge[]): Edge[] {
@@ -36,15 +38,18 @@ function styleEdges(edges: Edge[]): Edge[] {
   }));
 }
 
-export function AttackGraphCanvas({ engagementId, mockNodes, mockEdges }: AttackGraphCanvasProps) {
+export function AttackGraphCanvas({ engagementId, mockNodes, mockEdges, autoRefreshMs = 10000 }: AttackGraphCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(mockNodes ?? []);
   const [edges, setEdges, onEdgesChange] = useEdgesState(
     mockEdges ? styleEdges(mockEdges) : []
   );
   const [loading, setLoading] = useState(!mockNodes || mockNodes.length === 0);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const prevNodeCount = useRef(0);
 
-  useEffect(() => {
+  const fetchGraph = useCallback(() => {
     if (mockNodes && mockNodes.length > 0) return;
 
     fetch(`/api/engagements/${engagementId}/graph`)
@@ -55,8 +60,12 @@ export function AttackGraphCanvas({ engagementId, mockNodes, mockEdges }: Attack
       .then((data) => {
         const fetchedNodes: Node[] = data.nodes ?? [];
         const fetchedEdges: Edge[] = data.edges ?? [];
-        setNodes(fetchedNodes.length > 0 ? fetchedNodes : (mockNodes ?? []));
-        setEdges(styleEdges(fetchedEdges.length > 0 ? fetchedEdges : (mockEdges ?? [])));
+        const newNodes = fetchedNodes.length > 0 ? fetchedNodes : (mockNodes ?? []);
+        const newEdges = fetchedEdges.length > 0 ? fetchedEdges : (mockEdges ?? []);
+        setNodes(newNodes);
+        setEdges(styleEdges(newEdges));
+        setLastUpdated(new Date());
+        prevNodeCount.current = newNodes.length;
       })
       .catch(() => {
         setNodes(mockNodes ?? []);
@@ -64,6 +73,16 @@ export function AttackGraphCanvas({ engagementId, mockNodes, mockEdges }: Attack
       })
       .finally(() => setLoading(false));
   }, [engagementId, mockNodes, mockEdges, setNodes, setEdges]);
+
+  useEffect(() => {
+    fetchGraph();
+  }, [fetchGraph]);
+
+  useEffect(() => {
+    if (!autoRefresh || (mockNodes && mockNodes.length > 0)) return;
+    const interval = setInterval(fetchGraph, autoRefreshMs);
+    return () => clearInterval(interval);
+  }, [autoRefresh, autoRefreshMs, fetchGraph, mockNodes]);
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
@@ -119,15 +138,38 @@ export function AttackGraphCanvas({ engagementId, mockNodes, mockEdges }: Attack
                 Credential: "#eab308",
                 Finding: "#ec4899",
                 AttackPath: "#06b6d4",
+                DefenseAction: "#10b981",
+                DetectionFired: "#14b8a6",
+                Verification: "#84cc16",
+                Domain: "#38bdf8",
+                Secret: "#f59e0b",
+                SourceFile: "#94a3b8",
+                Technology: "#818cf8",
               };
               const nodeType = String((node.data as Record<string, unknown>)?.nodeType ?? "");
               return colors[nodeType] ?? "#71717a";
             }}
           />
           <Panel position="top-left">
-            <Badge variant="secondary">
-              {nodes.length} nodes / {edges.length} edges
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">
+                {nodes.length} nodes / {edges.length} edges
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2"
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                title={autoRefresh ? "Pause auto-refresh" : "Resume auto-refresh"}
+              >
+                <RefreshCw className={`h-3 w-3 ${autoRefresh ? "animate-spin" : ""}`} />
+              </Button>
+              {lastUpdated && (
+                <span className="text-[10px] text-muted-foreground">
+                  {lastUpdated.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
           </Panel>
         </ReactFlow>
       </div>

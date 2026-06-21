@@ -86,6 +86,8 @@ class NodeKind(StrEnum):
     # Defense (Blue Cell — proven detection coverage)
     DETECTION_FIRED = "DetectionFired"
     DEFENSE_ACTION = "DefenseAction"
+    # Offensive Vaccine — verification re-attack result
+    VERIFICATION = "Verification"
     # Active Directory (BloodHound 5.x — see
     # docs/design/2026-06-04-bloodhound-kgstore-mapping.md). AD-prefixed
     # kinds coexist with the generic identity kinds above; the
@@ -169,6 +171,9 @@ class EdgeKind(StrEnum):
     # Defense (Blue Cell — links a fired detection to what it caught)
     DETECTED = "DETECTED"
     USES_RULE = "USES_RULE"
+    # Offensive Vaccine (defense → finding, verification → finding)
+    MITIGATES = "MITIGATES"
+    VERIFIES = "VERIFIES"
     # Active Directory (BloodHound 5.x — see
     # docs/design/2026-06-04-bloodhound-kgstore-mapping.md). The generic
     # ``MEMBER_OF`` / ``HAS_SESSION`` / ``ADMIN_TO`` / ``OWNS`` /

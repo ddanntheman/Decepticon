@@ -19,6 +19,7 @@ import asyncio
 import hashlib
 import json
 import re
+import threading
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -33,10 +34,13 @@ from decepticon.tools.research import fuzz as fuzz_mod
 
 # Phase 1-4 scanning tool modules (PR #3)
 from decepticon.tools.research.api_spec import API_SPEC_TOOLS
+from decepticon.tools.research.cart import CART_TOOLS
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
 from decepticon.tools.research.config_audit import CONFIG_AUDIT_TOOLS
+from decepticon.tools.research.consensus import CONSENSUS_TOOLS
 from decepticon.tools.research.dast_crawler import DAST_TOOLS
 from decepticon.tools.research.dedupe import kg_dedupe_findings
+from decepticon.tools.research.engagement_intel import ENGAGEMENT_INTEL_TOOLS
 from decepticon.tools.research.exploit_synthesis import EXPLOIT_TOOLS
 from decepticon.tools.research.git_analysis import GIT_ANALYSIS_TOOLS
 from decepticon.tools.research.health import backend_health
@@ -47,8 +51,11 @@ from decepticon.tools.research.sarif import ingest_sarif_file
 from decepticon.tools.research.sast_orchestrator import SAST_TOOLS
 from decepticon.tools.research.sca import SCA_TOOLS
 from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
+from decepticon.tools.research.scope_expansion import SCOPE_EXPANSION_TOOLS
 from decepticon.tools.research.secret_scanner import scan_secrets
 from decepticon.tools.research.secret_scanner_full import SECRET_SCANNER_FULL_TOOLS
+from decepticon.tools.research.smart_fuzzer import SMART_FUZZER_TOOLS
+from decepticon.tools.research.structured_findings import STRUCTURED_FINDING_TOOLS
 from decepticon.tools.research.taint_analyzer import TAINT_TOOLS
 from decepticon.tools.research.tech_detection import detect_tech_stack
 from decepticon.tools.reversing.binary import identify_binary
@@ -2484,6 +2491,48 @@ def kg_ingest_scan_findings(findings_json: str) -> str:
         return _json({"ingested": added, "stats": graph.stats()})
 
 
+# ── Parallel-safe finding ID allocation ──────────────────────────────────
+
+_FINDING_LOCK = threading.Lock()
+
+
+@tool
+def allocate_finding_id(workspace: str = "/workspace") -> str:
+    """Atomically allocate the next FIND-NNN ID for a new finding.
+
+    Scans ``{workspace}/findings/FIND-*.md`` under a process-wide lock so
+    parallel sub-agents cannot collide on the same ID. Returns JSON with
+    the allocated ``id`` (e.g. ``"FIND-003"``), the ``path`` to write to,
+    and the ``next_id`` integer.
+
+    Call this BEFORE writing ``findings/FIND-{NNN}.md`` to guarantee a
+    unique filename even when multiple specialists run concurrently.
+    """
+    findings_dir = Path(workspace) / "findings"
+    with _FINDING_LOCK:
+        findings_dir.mkdir(parents=True, exist_ok=True)
+        highest = 0
+        for f in findings_dir.glob("FIND-*.md"):
+            stem = f.stem
+            suffix = stem.split("-", 1)[1] if "-" in stem else ""
+            try:
+                n = int(suffix)
+            except ValueError:
+                continue
+            if n > highest:
+                highest = n
+        next_id = highest + 1
+        placeholder = findings_dir / f"FIND-{next_id:03d}.md"
+        placeholder.touch(exist_ok=True)
+    return _json(
+        {
+            "id": f"FIND-{next_id:03d}",
+            "path": str(placeholder),
+            "next_id": next_id,
+        }
+    )
+
+
 # ── Public tool list ────────────────────────────────────────────────────
 
 RESEARCH_TOOLS = [
@@ -2524,6 +2573,7 @@ RESEARCH_TOOLS = [
     validate_finding,
     scan_secrets,
     detect_tech_stack,
+    allocate_finding_id,
     *SCANNER_TOOLS,
     *PATCH_TOOLS,
     *OSINT_TOOLS,
@@ -2538,4 +2588,16 @@ RESEARCH_TOOLS = [
     *IAC_TOOLS,
     *EXPLOIT_TOOLS,
     *DAST_TOOLS,
+    # Cross-session engagement intelligence + OSINT feeds
+    *ENGAGEMENT_INTEL_TOOLS,
+    # Structured finding output (JSON + DefectDojo + SARIF export)
+    *STRUCTURED_FINDING_TOOLS,
+    # Autonomous scope expansion intelligence
+    *SCOPE_EXPANSION_TOOLS,
+    # LLM-powered smart fuzzing
+    *SMART_FUZZER_TOOLS,
+    # CART — continuous automated red teaming
+    *CART_TOOLS,
+    # Multi-model consensus for critical findings
+    *CONSENSUS_TOOLS,
 ]
