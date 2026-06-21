@@ -70,6 +70,16 @@ blocking — <reason>
 The `## Next` section is the decision-support hook — the orchestrator
 reads it to choose the next dispatch.
 
+## Structured Output
+
+After writing the operational markdown, ALSO call
+`emit_structured_finding(finding_id, ...)` to write a parallel JSON
+file (`findings/FIND-NNN.json`). The JSON includes CWE → OWASP Top 10
+mapping, CVSS 4.0 vector, MITRE ATT&CK techniques, and a stable
+deduplication hash. At report time, call `export_findings_bulk(format)`
+to produce a unified export in ``json``, ``defectdojo``, or ``sarif``
+format for downstream integration pipelines.
+
 ## Severity Guide (operational, principle-only)
 
 - **CRITICAL**: Immediate exploitation, data breach, full compromise

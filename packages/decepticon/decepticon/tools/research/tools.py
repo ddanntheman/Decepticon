@@ -51,6 +51,7 @@ from decepticon.tools.research.sca import SCA_TOOLS
 from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
 from decepticon.tools.research.secret_scanner import scan_secrets
 from decepticon.tools.research.secret_scanner_full import SECRET_SCANNER_FULL_TOOLS
+from decepticon.tools.research.structured_findings import STRUCTURED_FINDING_TOOLS
 from decepticon.tools.research.taint_analyzer import TAINT_TOOLS
 from decepticon.tools.research.tech_detection import detect_tech_stack
 from decepticon.tools.reversing.binary import identify_binary
@@ -2585,4 +2586,6 @@ RESEARCH_TOOLS = [
     *DAST_TOOLS,
     # Cross-session engagement intelligence + OSINT feeds
     *ENGAGEMENT_INTEL_TOOLS,
+    # Structured finding output (JSON + DefectDojo + SARIF export)
+    *STRUCTURED_FINDING_TOOLS,
 ]
