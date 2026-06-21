@@ -1070,6 +1070,14 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
             except (ValueError, AttributeError):
                 pass
 
+        target = opplan.target if hasattr(opplan, "target") else ""
+        intel_hint = (
+            " NEXT: call recall_target_intel("
+            + (f'"{target}"' if target else '"<target_domain>"')
+            + ") to load prior engagement intelligence, "
+            "then run the canonical liveness probe before dispatching."
+        )
+
         return Command(
             update={
                 "objectives": objectives_raw,
@@ -1082,7 +1090,7 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
                         content=(
                             f"Loaded {len(objectives_raw)} objectives from {OPPLAN_VIRTUAL_PATH}. "
                             f"Engagement: {opplan.engagement_name} | "
-                            f"Counter at OBJ-{counter:03d}"
+                            f"Counter at OBJ-{counter:03d}." + intel_hint
                         ),
                         tool_call_id=tool_call_id,
                     )

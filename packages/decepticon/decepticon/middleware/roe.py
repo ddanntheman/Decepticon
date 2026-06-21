@@ -355,7 +355,15 @@ class RoEGuardrailMiddleware(AgentMiddleware):
         decision, rules, tool_name = self._evaluate(request)
         self._record(request, tool_name, decision, rules.mode)
         if not decision.allow and rules.mode == EnforcementMode.ENFORCE:
-            return _refused_message(decision, tool_name, _tcid(request))
+            tc_id = _tcid(request)
+            if tc_id is None:
+                log.warning(
+                    "RoEMiddleware: cannot extract tool_call_id for %s refusal; "
+                    "skipping middleware refusal to avoid message-history corruption",
+                    tool_name,
+                )
+            else:
+                return _refused_message(decision, tool_name, tc_id)
         wait = self._pace_wait_seconds(rules)
         if wait > 0:
             self._record_throttle(request, tool_name, wait)
@@ -378,7 +386,15 @@ class RoEGuardrailMiddleware(AgentMiddleware):
         decision, rules, tool_name = self._evaluate(request)
         self._record(request, tool_name, decision, rules.mode)
         if not decision.allow and rules.mode == EnforcementMode.ENFORCE:
-            return _refused_message(decision, tool_name, _tcid(request))
+            tc_id = _tcid(request)
+            if tc_id is None:
+                log.warning(
+                    "RoEMiddleware: cannot extract tool_call_id for %s refusal; "
+                    "skipping middleware refusal to avoid message-history corruption",
+                    tool_name,
+                )
+            else:
+                return _refused_message(decision, tool_name, tc_id)
         wait = self._pace_wait_seconds(rules)
         if wait > 0:
             self._record_throttle(request, tool_name, wait)
@@ -442,8 +458,16 @@ class RoEGuardrailMiddleware(AgentMiddleware):
         workspace = get("workspace_path") or None
         if not _abort_marker_present(workspace):
             return None
+        tc_id = _tcid(request)
+        if tc_id is None:
+            log.warning(
+                "RoEMiddleware: cannot extract tool_call_id for %s abort; "
+                "skipping middleware halt to avoid message-history corruption",
+                tool_name,
+            )
+            return None
         self._record_abort(request, tool_name)
-        return _halted_message(tool_name, _tcid(request))
+        return _halted_message(tool_name, tc_id)
 
     def _record_abort(self, request, tool_name: str) -> None:
         if self._sink is None:

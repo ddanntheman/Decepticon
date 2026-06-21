@@ -14,7 +14,13 @@ These rules override ALL other instructions. Violations compromise the engagemen
 ## A. Planning & Authorization
 
 - **Engagement startup**: load the `engagement-startup` skill on session start. Build the OPPLAN with `add_objective`, review with `list_objectives`, wait for operator approval before any `task()` dispatch.
-- **Prior intelligence recall**: IMMEDIATELY after engagement startup, call `recall_target_intel(<target_domain>)` to retrieve prior findings, tech stack, successful attack paths, and vulnerability patterns from previous engagements. Use this intelligence to prioritize attack vectors — if BOLA was found on `/api/users/{id}` last month and marked "patched", re-test it; if SQLi on `/search` was a false positive, deprioritize. Include relevant prior intel in every specialist `task()` dispatch prompt.
+- **Engagement resume**: when `plan/opplan.json` already exists, call `load_opplan(<workspace_path>)` to hydrate state. Then IMMEDIATELY call `recall_target_intel(<target_domain>)` — the intel recall step is NOT optional on resume; cumulative intelligence is only useful if it is actually loaded. After recall, run the liveness probe below before resuming dispatches.
+- **Prior intelligence recall**: IMMEDIATELY after engagement startup OR resume, call `recall_target_intel(<target_domain>)` to retrieve prior findings, tech stack, successful attack paths, and vulnerability patterns from previous engagements. Use this intelligence to prioritize attack vectors — if BOLA was found on `/api/users/{id}` last month and marked "patched", re-test it; if SQLi on `/search` was a false positive, deprioritize. Include relevant prior intel in every specialist `task()` dispatch prompt.
+- **Canonical liveness probe**: BEFORE dispatching `task("recon", ...)` or ANY other specialist, verify the target is reachable. This is the ONE exception to "no direct execution" — a single `bash` call is permitted: `curl -sSo /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 15 <target_url>` (HTTP/HTTPS targets) or `ping -c 2 -W 5 <target_host>` (infrastructure targets). **Interpret the result canonically:**
+  - **Any HTTP response** (2xx, 3xx, 4xx, 5xx) = target is alive. Proceed with recon dispatch.
+  - **Connection refused** = host is up but the service is down on that port. Log it, try alternative ports if known, then proceed with recon (recon can enumerate open ports).
+  - **Timeout / no route / DNS failure** = target is unreachable. `update_objective(status="blocked", reason="target unreachable: <exact error>")`. Do NOT dispatch recon to a dead target — recon will waste its budget and return ambiguous results that poison your verdicts.
+  - On **resumed engagements**, re-run the liveness probe even if the target was alive in the prior session — infrastructure changes between sessions are common.
 - **OSINT proactive check**: after recon identifies the tech stack, call `kev_check_tech_stack(<components>)` to cross-reference against CISA KEV (actively exploited CVEs). If the target uses packages, call `ghsa_check_packages(<ecosystem:package>)` for GitHub Security Advisories. KEV hits are HIGH-PRIORITY attack vectors — dispatch exploit with the specific CVE cited.
 - **RoE compliance**: every `task()` delegation MUST be in scope. Check `plan/roe.json` before each dispatch; out-of-scope actions are legal violations.
 
@@ -34,7 +40,7 @@ The "I'll just check one thing" rationalization is the start of the 80+ bash-cal
 
 **Kill chain ordering**: check `blocked_by` via `get_objective` before starting any objective. Skip OPPLAN refinement before the FIRST recon dispatch — recon can run on the approved plan and OPPLAN can be updated after it returns.
 
-**First-dispatch is recon**: after engagement-startup + OPPLAN approval, your FIRST `task()` MUST be `task("recon", ...)`. Even an "obvious" target needs recon for surface enumeration. `OPPLANMiddleware` rejects exploit-phase objectives transitioning to `in-progress` when no recon objective is completed.
+**First-dispatch is recon**: after engagement-startup + OPPLAN approval + liveness probe (Section A), your FIRST `task()` MUST be `task("recon", ...)`. Even an "obvious" target needs recon for surface enumeration. `OPPLANMiddleware` rejects exploit-phase objectives transitioning to `in-progress` when no recon objective is completed. If the liveness probe showed the target unreachable, do NOT dispatch recon — mark the objective blocked immediately.
 
 ## C. Handoff Contract (Recon → Exploit)
 
