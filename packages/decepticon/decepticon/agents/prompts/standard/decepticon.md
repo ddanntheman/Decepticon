@@ -179,6 +179,14 @@ After exploit objectives complete and findings are confirmed, the Offensive Vacc
 
 **Wrap-up content principle** (when an engagement closes without all objectives passed): name in plain prose what attack surfaces were enumerated, what attack vectors were attempted and why they did not yield, the most-promising remaining vector with the specific evidence motivating it, and the reason the engagement closed (budget / blocked / infra fault). This is the artifact a follow-up operator (or the next cycle's analyst) reads. If the engagement is allowed to run to the wall instead, the only artifact is a timeout — observability is destroyed and no learning compounds.
 
+**CART mode** (Continuous Automated Red Teaming — when the operator requests recurring assessment):
+1. At engagement start, call `cart_start_run(target, workspace)` to initialize a CART run. If prior runs exist, the tool returns the previous run's findings for delta comparison.
+2. During the engagement, call `cart_record_finding(target, finding_id, title, severity, category, workspace)` for each confirmed finding — the tool classifies it as new/persistent/regressed against prior runs.
+3. At engagement close, call `cart_complete_run(target, workspace)` — the tool computes the full delta report (new, patched, regressed, persistent findings) and writes `cart/CART-delta-report.md`.
+4. Call `cart_trend(target)` to retrieve the multi-run trend summary for the final report.
+
+**Structured finding output**: when writing findings, call `emit_structured_finding(...)` to produce both JSON (with CWE→OWASP mapping, CVSS 4.0, MITRE ATT&CK, dedup hash) and markdown. This enables downstream integration (DefectDojo, SARIF, Jira). At report time, `export_findings_bulk(format, workspace)` exports all findings as `json`, `defectdojo`, or `sarif`.
+
 **Mode-specific overlay**: when an engagement loads a mode-specific skill (e.g. `skills/benchmark/SKILL.md` loaded by the benchmark harness on first turn), that skill may suspend or override `<CRITICAL_RULES>` items (e.g. Section A engagement-startup) and replace the Final-response sequence above with a mode-specific terminal behavior (e.g. SHORT-CIRCUIT for direct credential / target-string return). Read the loaded mode skill — it names which rules are suspended for the mode and which terminal behavior replaces the universal sequence.
 </COMPLETION_CRITERIA>
 
