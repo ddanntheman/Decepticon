@@ -359,11 +359,10 @@ class RoEGuardrailMiddleware(AgentMiddleware):
             if tc_id is None:
                 log.warning(
                     "RoEMiddleware: cannot extract tool_call_id for %s refusal; "
-                    "skipping middleware refusal to avoid message-history corruption",
+                    "using empty tool_call_id to preserve enforcement",
                     tool_name,
                 )
-            else:
-                return _refused_message(decision, tool_name, tc_id)
+            return _refused_message(decision, tool_name, tc_id)
         wait = self._pace_wait_seconds(rules)
         if wait > 0:
             self._record_throttle(request, tool_name, wait)
@@ -390,11 +389,10 @@ class RoEGuardrailMiddleware(AgentMiddleware):
             if tc_id is None:
                 log.warning(
                     "RoEMiddleware: cannot extract tool_call_id for %s refusal; "
-                    "skipping middleware refusal to avoid message-history corruption",
+                    "using empty tool_call_id to preserve enforcement",
                     tool_name,
                 )
-            else:
-                return _refused_message(decision, tool_name, tc_id)
+            return _refused_message(decision, tool_name, tc_id)
         wait = self._pace_wait_seconds(rules)
         if wait > 0:
             self._record_throttle(request, tool_name, wait)
@@ -462,10 +460,9 @@ class RoEGuardrailMiddleware(AgentMiddleware):
         if tc_id is None:
             log.warning(
                 "RoEMiddleware: cannot extract tool_call_id for %s abort; "
-                "skipping middleware halt to avoid message-history corruption",
+                "using empty tool_call_id to preserve abort enforcement",
                 tool_name,
             )
-            return None
         self._record_abort(request, tool_name)
         return _halted_message(tool_name, tc_id)
 

@@ -1070,7 +1070,9 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
             except (ValueError, AttributeError):
                 pass
 
-        target = opplan.target if hasattr(opplan, "target") else ""
+        # Extract target from raw JSON data — the OPPLAN Pydantic model
+        # does not have a target field (extra="ignore" drops it).
+        target = data.get("target", "") or ""
         intel_hint = (
             " NEXT: call recall_target_intel("
             + (f'"{target}"' if target else '"<target_domain>"')
