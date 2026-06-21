@@ -53,7 +53,16 @@ concurrent-session and cookie-flag (HttpOnly/Secure/SameSite) issues.
 </HUNTING_LANES>
 
 <ENVIRONMENT>
-Recommended bash tools: `curl`/`httpie`, `jwt_tool`, `hashcat`/`john`
-(secret cracking), `openssl` (cert/sig work). Use `payload_search` and
-`h1_search` for disclosed ATO chains.
+## Structured scanning tools (available as tool calls — prefer over raw bash)
+- `audit_security_headers` — check auth-related headers (HSTS, cookie flags)
+- `audit_tls_config` — verify TLS configuration and cipher suites
+- `audit_cors_policy` — detect CORS misconfigurations that enable cross-origin token theft
+- `dast_crawl` — discover auth endpoints and login/reset forms
+- `dast_test_endpoints` — automated testing of auth endpoints for injection/bypass
+- `dast_test_single` — targeted test of a single auth endpoint
+
+## Bash tools (use when structured tools don't cover)
+`curl`/`httpie`, `jwt_tool`, `hashcat`/`john` (secret cracking),
+`openssl` (cert/sig work). Use `payload_search` and `h1_search` for
+disclosed ATO chains.
 </ENVIRONMENT>

@@ -20,14 +20,15 @@ from __future__ import annotations
 from typing import Any
 
 from decepticon.agents.bounty._common import make_bounty_agent
+from decepticon.tools.research.config_audit import CONFIG_AUDIT_TOOLS
+from decepticon.tools.research.sast_orchestrator import SAST_TOOLS
+from decepticon.tools.research.sca import SCA_TOOLS
+from decepticon.tools.research.taint_analyzer import TAINT_TOOLS
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled
 
 _ROLE = "asvs"
 
-# ASVS verification is driven by the shared bash + research + web surface
-# (curl / nuclei / testssl probing, payload libraries, RoE-gated fetch);
-# no extra lane-specific Python tools are required.
-_DOMAIN_TOOLS: list[Any] = []
+_DOMAIN_TOOLS: list[Any] = [*SAST_TOOLS, *CONFIG_AUDIT_TOOLS, *TAINT_TOOLS, *SCA_TOOLS]
 
 create_asvs_agent = make_bounty_agent(role=_ROLE, domain_tools=_DOMAIN_TOOLS)
 

@@ -54,8 +54,16 @@ versions (`/v1` vs `/v2`), staging hosts, and undocumented routes.
 </HUNTING_LANES>
 
 <ENVIRONMENT>
-Recommended bash tools: `curl`/`httpie`, `ffuf`/`feroxbuster` (route
-discovery), `jq` (response diffing), `arjun` (param discovery). Use
-`payload_search` for class payloads and `h1_search` for disclosed API
-bug patterns.
+## Structured scanning tools (available as tool calls — prefer over raw bash)
+- `api_parse_openapi` — parse OpenAPI/Swagger specs, extract endpoints + auth requirements
+- `api_generate_test_matrix` — generate BOLA/BFLA/mass-assignment test matrices from parsed specs
+- `api_detect_undocumented` — find undocumented endpoints by comparing observed traffic to spec
+- `dast_crawl` — crawl the target to discover API endpoints and forms
+- `dast_test_endpoints` — automated injection testing of discovered endpoints
+- `dast_test_single` — targeted test of a single endpoint
+
+## Bash tools (use when structured tools don't cover)
+`curl`/`httpie`, `ffuf`/`feroxbuster` (route discovery), `jq` (response
+diffing), `arjun` (param discovery). Use `payload_search` for class
+payloads and `h1_search` for disclosed API bug patterns.
 </ENVIRONMENT>
