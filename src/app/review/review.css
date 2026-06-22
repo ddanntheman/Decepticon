@@ -1,0 +1,216 @@
+/* Founder Review — Brand system overview */
+
+.review-page {
+  background: var(--hh-cream);
+  min-height: 100vh;
+}
+
+.review-header {
+  background: var(--hh-indigo-800);
+  color: var(--hh-cream);
+  padding: 80px 0 64px;
+  text-align: center;
+}
+.review-header h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(2.25rem, 4vw, 3.5rem);
+  color: var(--hh-cream);
+  letter-spacing: -0.02em;
+  margin: 0 0 16px;
+}
+.review-header p {
+  font-size: 18px;
+  color: rgba(247,242,231,0.72);
+  max-width: 640px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+.review-nav {
+  background: var(--hh-paper);
+  border-bottom: 1px solid var(--border);
+  padding: 20px 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.review-nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 36px;
+}
+.review-nav a {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--hh-indigo-600);
+  padding: 8px 0;
+  position: relative;
+}
+.review-nav a::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -2px;
+  height: 2px;
+  background: var(--hh-gold-400);
+  transform: scaleX(0);
+  transition: transform 200ms;
+}
+.review-nav a:hover::after { transform: scaleX(1); }
+
+.review-section {
+  padding: 80px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-section h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  color: var(--hh-indigo-700);
+  margin: 0 0 12px;
+}
+.review-section .subtitle {
+  font-size: 18px;
+  color: var(--hh-warm-500);
+  margin: 0 0 48px;
+}
+
+.ecosystem-diagram {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin-bottom: 48px;
+}
+.eco-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 40px;
+  transition: all 200ms;
+}
+.eco-card:hover {
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
+}
+.eco-card.hih {
+  background: var(--hh-paper);
+}
+.eco-card.sg {
+  background: var(--hh-indigo-800);
+  color: var(--hh-cream);
+}
+.eco-card .eco-label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin: 0 0 12px;
+}
+.eco-card.hih .eco-label { color: var(--hh-warm-500); }
+.eco-card.sg .eco-label { color: var(--hh-gold-300); }
+.eco-card .eco-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 28px;
+  margin: 0 0 12px;
+}
+.eco-card.sg .eco-title { color: var(--hh-cream); }
+.eco-card .eco-desc {
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+.eco-card.hih .eco-desc { color: var(--hh-warm-700); }
+.eco-card.sg .eco-desc { color: rgba(247,242,231,0.72); }
+.eco-card .eco-link {
+  font-weight: 600;
+  font-size: 14px;
+}
+.eco-card.sg .eco-link { color: var(--hh-gold-400); }
+
+@media (max-width: 720px) {
+  .ecosystem-diagram { grid-template-columns: 1fr; }
+}
+
+/* Token grid */
+.token-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 20px;
+}
+.token-card {
+  background: var(--hh-paper);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.token-swatch {
+  height: 80px;
+}
+.token-info {
+  padding: 16px;
+}
+.token-info .name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--hh-indigo-700);
+  margin: 0 0 4px;
+}
+.token-info .value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--hh-warm-500);
+}
+.token-info .role {
+  font-size: 12px;
+  color: var(--hh-warm-300);
+  margin-top: 4px;
+}
+
+/* Type specimens */
+.type-specimen {
+  margin-bottom: 40px;
+  padding: 32px;
+  background: var(--hh-paper);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.type-specimen .label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--hh-warm-500);
+  margin-bottom: 16px;
+}
+.type-specimen .sample-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 48px;
+  line-height: 1.1;
+  color: var(--hh-indigo-700);
+}
+.type-specimen .sample-body {
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--fg);
+}
+.type-specimen .sample-mono {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--hh-warm-700);
+}
+
+.review-footer {
+  background: var(--hh-indigo-800);
+  color: rgba(247,242,231,0.6);
+  padding: 40px 0;
+  text-align: center;
+  font-size: 14px;
+}
+.review-footer a {
+  color: var(--hh-gold-300);
+}
