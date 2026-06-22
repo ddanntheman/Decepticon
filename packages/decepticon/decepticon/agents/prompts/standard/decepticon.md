@@ -165,14 +165,15 @@ Every engagement has one terminal state and one final-response sequence.
 
 **Final-response sequence** (when all objectives terminal):
 
-1. `load_skill("/skills/standard/decepticon/final-report/SKILL.md")`
-2. Generate `report/executive-summary.md` per the skill's executive-summary template
-3. Generate `report/technical-report.md` per the skill's technical-report template (this includes Findings Detail, Attack Path Narratives, Detection Gap Analysis, Activity Timeline, Remediation Roadmap, MITRE ATT&CK Coverage)
-4. **Consensus validation**: for every critical/high finding, call `validate_finding_consensus(finding_id, ...)` BEFORE promotion. Only APPROVED findings are promoted. REJECTED findings are excluded or downgraded. REVIEW findings are flagged for the operator.
-5. Promote APPROVED `findings/FIND-NNN.md` to deliverable `report/<severity><NN>-<slug>.md` (severity-sorted, human-readable; `id: FIND-NNN` retained in frontmatter) per the skill's deliverable-tier promotion section
-6. **Persist intelligence**: for each confirmed finding, call `store_finding_intel(<target>, ...)` so future engagements can recall it. Call `store_tech_stack(<target>, ...)` with the detected stack. For each major attack path (successful or failed), call `store_attack_path(<target>, ...)`. Finally, call `close_engagement_intel(<target>, notes=<summary>)` to increment the engagement counter.
-7. Call `consensus_summary()` and `export_findings_bulk("sarif")` to produce the structured export alongside the report.
-8. Final assistant message references both report paths and provides a 3-bullet headline summary
+1. **Retrospective analysis**: `task("retrospective", "Analyze this engagement for failures, tool issues, access problems, efficiency gaps, and coverage gaps. Workspace: <workspace_path>. Write retro/RETROSPECTIVE.md if any issues found.")` — this MUST run before the final report so lessons learned inform the wrap-up narrative. If the retrospective finds issues, reference them in the executive summary.
+2. `load_skill("/skills/standard/decepticon/final-report/SKILL.md")`
+3. Generate `report/executive-summary.md` per the skill's executive-summary template
+4. Generate `report/technical-report.md` per the skill's technical-report template (this includes Findings Detail, Attack Path Narratives, Detection Gap Analysis, Activity Timeline, Remediation Roadmap, MITRE ATT&CK Coverage)
+5. **Consensus validation**: for every critical/high finding, call `validate_finding_consensus(finding_id, ...)` BEFORE promotion. Only APPROVED findings are promoted. REJECTED findings are excluded or downgraded. REVIEW findings are flagged for the operator.
+6. Promote APPROVED `findings/FIND-NNN.md` to deliverable `report/<severity><NN>-<slug>.md` (severity-sorted, human-readable; `id: FIND-NNN` retained in frontmatter) per the skill's deliverable-tier promotion section
+7. **Persist intelligence**: for each confirmed finding, call `store_finding_intel(<target>, ...)` so future engagements can recall it. Call `store_tech_stack(<target>, ...)` with the detected stack. For each major attack path (successful or failed), call `store_attack_path(<target>, ...)`. Finally, call `close_engagement_intel(<target>, notes=<summary>)` to increment the engagement counter.
+8. Call `consensus_summary()` and `export_findings_bulk("sarif")` to produce the structured export alongside the report.
+9. Final assistant message references both report paths and provides a 3-bullet headline summary
 
 **Offensive Vaccine loop** (optional, when operator requests or RoE enables remediation verification):
 After exploit objectives complete and findings are confirmed, the Offensive Vaccine cycle begins:
