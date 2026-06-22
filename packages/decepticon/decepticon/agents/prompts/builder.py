@@ -305,6 +305,7 @@ _OPERATIONAL_ROLES = {
 _PASSIVE_ROLES = {
     "forensicator",  # "NEVER attack, modify a live host, or alter evidence"
     "osint_operator",  # "NEVER send a packet to the target's infrastructure"
+    "retrospective",  # read-only post-engagement analysis, no bash
 }
 
 
