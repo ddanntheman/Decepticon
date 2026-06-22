@@ -16,6 +16,7 @@ Three tools:
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -258,23 +259,34 @@ def _analyze_access_issues(events: list[dict[str, Any]]) -> list[dict[str, Any]]
     """Detect access and infrastructure issues from event patterns."""
     issues: list[dict[str, Any]] = []
 
-    access_error_keywords = [
-        "connection refused",
-        "timeout",
-        "dns",
-        "unreachable",
-        "credential",
-        "unauthorized",
-        "forbidden",
-        "403",
-        "401",
-        "rate limit",
-        "quota",
-        "sandbox",
-        "middleware rejection",
-        "kg-middleware-rejection",
-        "roe",
-        "out of scope",
+    # Patterns use word-boundary (\b) matching to avoid false positives
+    # from short tokens appearing as substrings (e.g. "403" in byte
+    # counts, "roe" in hostnames like "monroe.example.com").
+    _access_patterns: list[tuple[str, re.Pattern[str]]] = [
+        ("connection refused", re.compile(r"connection refused", re.IGNORECASE)),
+        ("timeout", re.compile(r"\btimeout\b", re.IGNORECASE)),
+        (
+            "dns failure",
+            re.compile(r"\bdns\s+(failure|error|resolution|timeout|refused)\b", re.IGNORECASE),
+        ),
+        ("unreachable", re.compile(r"\bunreachable\b", re.IGNORECASE)),
+        ("credential", re.compile(r"\bcredential\b", re.IGNORECASE)),
+        ("unauthorized", re.compile(r"\bunauthorized\b", re.IGNORECASE)),
+        ("forbidden", re.compile(r"\bforbidden\b", re.IGNORECASE)),
+        ("http 403", re.compile(r"\b(?:http|status)[^\w]*403\b", re.IGNORECASE)),
+        ("http 401", re.compile(r"\b(?:http|status)[^\w]*401\b", re.IGNORECASE)),
+        ("rate limit", re.compile(r"rate.limit", re.IGNORECASE)),
+        ("quota", re.compile(r"\bquota\b", re.IGNORECASE)),
+        ("sandbox", re.compile(r"\bsandbox\b", re.IGNORECASE)),
+        ("middleware rejection", re.compile(r"middleware.rejection", re.IGNORECASE)),
+        ("kg-middleware-rejection", re.compile(r"kg-middleware-rejection", re.IGNORECASE)),
+        (
+            "roe violation",
+            re.compile(
+                r"\bro(?:e|ules.of.engagement)\b.*(?:block|reject|scope|violat)", re.IGNORECASE
+            ),
+        ),
+        ("out of scope", re.compile(r"out of scope", re.IGNORECASE)),
     ]
 
     access_errors: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -285,9 +297,9 @@ def _analyze_access_issues(events: list[dict[str, Any]]) -> list[dict[str, Any]]
         content_str = str(payload.get("content", "")).lower()
         combined = error_str + " " + content_str
 
-        for keyword in access_error_keywords:
-            if keyword in combined:
-                access_errors[keyword].append(
+        for label, pattern in _access_patterns:
+            if pattern.search(combined):
+                access_errors[label].append(
                     {
                         "ts": ev.get("ts"),
                         "type": ev.get("type"),
@@ -297,54 +309,58 @@ def _analyze_access_issues(events: list[dict[str, Any]]) -> list[dict[str, Any]]
                 )
                 break
 
-    for keyword, occurrences in access_errors.items():
+    _high_severity_labels = {"credential", "unauthorized", "forbidden", "http 401", "http 403"}
+    _low_effort_labels = {"rate limit", "quota"}
+
+    for label, occurrences in access_errors.items():
         if len(occurrences) >= 2:
             agents_affected = list({o["agent"] for o in occurrences if o.get("agent")})
             issues.append(
                 {
                     "category": "access_issue",
-                    "severity": "high"
-                    if keyword in ("credential", "unauthorized", "forbidden")
-                    else "medium",
-                    "title": f"Repeated '{keyword}' errors ({len(occurrences)} occurrences)",
+                    "severity": "high" if label in _high_severity_labels else "medium",
+                    "title": f"Repeated '{label}' errors ({len(occurrences)} occurrences)",
                     "description": (
-                        f"Detected {len(occurrences)} events containing '{keyword}' "
-                        f"errors. Affected agents: {', '.join(agents_affected) or 'unknown'}."
+                        f"Detected {len(occurrences)} events matching '{label}' "
+                        f"pattern. Affected agents: {', '.join(agents_affected) or 'unknown'}."
                     ),
                     "evidence": {
-                        "keyword": keyword,
+                        "pattern": label,
                         "occurrence_count": len(occurrences),
                         "affected_agents": agents_affected,
                         "first_occurrence_ts": occurrences[0].get("ts"),
                         "last_occurrence_ts": occurrences[-1].get("ts"),
                     },
-                    "recommended_fix": _access_fix_recommendation(keyword),
-                    "effort": "small" if keyword in ("rate limit", "quota") else "medium",
+                    "recommended_fix": _access_fix_recommendation(label),
+                    "effort": "small" if label in _low_effort_labels else "medium",
                 }
             )
 
     return issues
 
 
-def _access_fix_recommendation(keyword: str) -> str:
-    """Return specific fix guidance for access-pattern keywords."""
+def _access_fix_recommendation(label: str) -> str:
+    """Return specific fix guidance for access-pattern labels."""
     recommendations = {
         "connection refused": "Verify the target service is running and the port is correct. Run the liveness probe before dispatching agents.",
         "timeout": "Check network connectivity to the target. Consider increasing timeout values or running the liveness probe first.",
-        "dns": "Verify the target hostname resolves. Check DNS configuration and /etc/resolv.conf.",
+        "dns failure": "Verify the target hostname resolves. Check DNS configuration and /etc/resolv.conf.",
         "unreachable": "Target host is unreachable. Verify network path, firewall rules, and VPN connectivity.",
         "credential": "Verify credentials are configured in the engagement workspace. Check .env files and secret storage.",
         "unauthorized": "Authentication is failing. Verify API keys, tokens, or session cookies are valid and not expired.",
         "forbidden": "Authorization is failing. The credentials may be valid but lack required permissions/scopes.",
+        "http 403": "Authorization is failing (HTTP 403). The credentials may be valid but lack required permissions/scopes.",
+        "http 401": "Authentication is failing (HTTP 401). Verify API keys, tokens, or session cookies are valid and not expired.",
         "rate limit": "The target or API provider is rate-limiting requests. Implement backoff or reduce concurrency.",
         "quota": "API quota exceeded. Check provider billing/quotas or switch to a different provider.",
         "sandbox": "Sandbox backend connectivity issue. Verify the sandbox container is running and responsive.",
+        "middleware rejection": "Middleware rejected a tool call. Check the middleware stack for misconfiguration.",
         "kg-middleware-rejection": "KG middleware rejected a tool call due to missing kg_engagement scope. This is the known message-history corruption bug — verify PR #10 fix is applied.",
-        "roe": "Rules of Engagement middleware blocked a call. Verify the RoE scope includes the target and the tool is permitted.",
+        "roe violation": "Rules of Engagement middleware blocked a call. Verify the RoE scope includes the target and the tool is permitted.",
         "out of scope": "An operation was blocked as out of scope. Review plan/roe.json and ensure all target surfaces are in-scope.",
     }
     return recommendations.get(
-        keyword, f"Investigate '{keyword}' errors in events.jsonl for root cause."
+        label, f"Investigate '{label}' errors in events.jsonl for root cause."
     )
 
 
