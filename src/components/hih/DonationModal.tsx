@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useRef, FormEvent } from "react";
 import Icon from "@/components/shared/Icon";
 
 interface DonationModalProps {
@@ -26,9 +26,17 @@ export default function DonationModal({
   const [coverFee, setCoverFee] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (open) setFreq(defaultFreq);
-  }, [open, defaultFreq]);
+  const wasOpen = useRef(false);
+  if (open && !wasOpen.current) {
+    wasOpen.current = true;
+    if (freq !== defaultFreq) setFreq(defaultFreq);
+    const defaultAmt = defaultFreq === "monthly" ? 40 : 50;
+    setAmount(defaultAmt);
+    setCustom("");
+  }
+  if (!open && wasOpen.current) {
+    wasOpen.current = false;
+  }
 
   if (!open) return null;
 
@@ -98,7 +106,7 @@ export default function DonationModal({
                 role="tab"
                 aria-selected={freq === "monthly"}
                 className={freq === "monthly" ? "active" : ""}
-                onClick={() => setFreq("monthly")}
+                onClick={() => { setFreq("monthly"); setAmount(40); setCustom(""); }}
               >
                 Monthly
               </button>
@@ -107,7 +115,7 @@ export default function DonationModal({
                 role="tab"
                 aria-selected={freq === "once"}
                 className={freq === "once" ? "active" : ""}
-                onClick={() => setFreq("once")}
+                onClick={() => { setFreq("once"); setAmount(50); setCustom(""); }}
               >
                 One-Time
               </button>

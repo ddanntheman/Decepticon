@@ -289,7 +289,7 @@ export default function ReviewPage() {
           </p>
           <p style={{ marginTop: 8 }}>
             <Link href="/">heartinheaven.org</Link>
-            {" &middot; "}
+            {" \u00B7 "}
             <Link href="/seismic-generosity">seismicgenerosity.org</Link>
           </p>
         </div>
