@@ -7,6 +7,7 @@
     "exploit": "./packages/decepticon/decepticon/agents/standard/exploit.py:graph",
     "postexploit": "./packages/decepticon/decepticon/agents/standard/postexploit.py:graph",
     "analyst": "./packages/decepticon/decepticon/agents/standard/analyst.py:graph",
+    "asvs_assessor": "./packages/decepticon/decepticon/agents/standard/asvs_assessor.py:graph",
     "reverser": "./packages/decepticon/decepticon/agents/standard/reverser.py:graph",
     "contract_auditor": "./packages/decepticon/decepticon/agents/standard/contract_auditor.py:graph",
     "cloud_hunter": "./packages/decepticon/decepticon/agents/standard/cloud_hunter.py:graph",

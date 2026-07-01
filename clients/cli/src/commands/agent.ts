@@ -35,6 +35,8 @@ function apiBase(): string {
   return process.env.DECEPTICON_API_URL || "http://localhost:2024";
 }
 
+const ORCHESTRATORS = new Set(["decepticon", "soundwave", "vulnresearch"]);
+
 /**
  * Discover orchestrators dynamically from the agent runtime.
  * Returns deduplicated graph_ids registered on the server.
@@ -43,15 +45,16 @@ async function listOrchestrators(): Promise<string[]> {
   const res = await fetch(`${apiBase()}/assistants/search`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ limit: 100 }),
   });
   if (!res.ok) {
     throw new Error(`assistants/search HTTP ${res.status}: ${await res.text()}`);
   }
   const data = (await res.json()) as AssistantRow[];
-  // Deduplicate by graph_id — the server may return multiple assistants
-  // sharing the same graph (e.g. per-thread forks).
-  return [...new Set(data.map((a) => a.graph_id))];
+  const orchestrators = data
+    .map((a) => a.graph_id)
+    .filter((id) => ORCHESTRATORS.has(id));
+  return [...new Set(orchestrators)].sort();
 }
 
 const agent: Command = {

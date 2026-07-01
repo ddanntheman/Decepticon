@@ -36,6 +36,7 @@ STANDARD_GRAPHS: dict[str, str] = {
     "exploit": "./decepticon/agents/standard/exploit.py:graph",
     "postexploit": "./decepticon/agents/standard/postexploit.py:graph",
     "analyst": "./decepticon/agents/standard/analyst.py:graph",
+    "asvs_assessor": "./decepticon/agents/standard/asvs_assessor.py:graph",
     "reverser": "./decepticon/agents/standard/reverser.py:graph",
     "contract_auditor": "./decepticon/agents/standard/contract_auditor.py:graph",
     "cloud_hunter": "./decepticon/agents/standard/cloud_hunter.py:graph",

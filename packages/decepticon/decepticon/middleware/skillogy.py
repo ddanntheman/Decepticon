@@ -115,6 +115,7 @@ _PHASE_FOR_ROLE: dict[str, str] = {
     "wireless_operator": "wireless",
     "phisher": "phishing",
     "analyst": "analyst",
+    "asvs_assessor": "analyst",
     "contract_auditor": "smart-contracts",
     "reverser": "reverse-engineering",
     "osint_operator": "osint",

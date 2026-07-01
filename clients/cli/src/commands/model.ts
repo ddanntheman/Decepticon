@@ -26,12 +26,16 @@ import { setModelOverride, getModelOverride } from "./modelOverride.js";
 const SUPPORTED_MODELS: Record<string, string[]> = {
   // Cloud Anthropic
   "Anthropic API": [
-    "anthropic/claude-opus-4-7",
+    "anthropic/claude-fable-5",
+    "anthropic/claude-opus-4-8",
+    "anthropic/claude-sonnet-5",
     "anthropic/claude-sonnet-4-6",
     "anthropic/claude-haiku-4-5",
   ],
   "Claude Code OAuth": [
-    "auth/claude-opus-4-7",
+    "auth/claude-fable-5",
+    "auth/claude-opus-4-8",
+    "auth/claude-sonnet-5",
     "auth/claude-sonnet-4-6",
     "auth/claude-haiku-4-5",
   ],
@@ -115,7 +119,7 @@ const SUPPORTED_MODELS: Record<string, string[]> = {
     "cohere_chat/command-r",
   ],
   "Moonshot Kimi K2": [
-    "moonshot/kimi-k2-instruct",
+    "moonshot/kimi-k2.6",
     "moonshot/moonshot-v1-128k",
     "moonshot/moonshot-v1-8k",
   ],
