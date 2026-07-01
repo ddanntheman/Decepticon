@@ -110,6 +110,7 @@ class TestPhaseForRoleMapping:
             "wireless_operator",
             "phisher",
             "analyst",
+            "asvs_assessor",
             "contract_auditor",
             "reverser",
             "osint_operator",

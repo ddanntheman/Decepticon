@@ -106,10 +106,10 @@ dogfood: launcher
 	@echo "[dogfood] Stopping any prior repo-root stack to avoid container-name conflict..."
 	@$(COMPOSE) $(PROFILES_ALL) down --remove-orphans 2>/dev/null; true
 	@mkdir -p $(DOGFOOD_HOME)/workspace
-	@ln -sfn $(CURDIR)/docker-compose.yml $(DOGFOOD_HOME)/docker-compose.yml
+	@cp -f $(CURDIR)/docker-compose.yml $(DOGFOOD_HOME)/docker-compose.yml
 	@ln -sfn $(CURDIR)/config              $(DOGFOOD_HOME)/config
 	@ln -sfn $(CURDIR)/containers          $(DOGFOOD_HOME)/containers
-	@ln -sfn $(CURDIR)/.env.example        $(DOGFOOD_HOME)/.env.example
+	@cp -f $(CURDIR)/.env.example        $(DOGFOOD_HOME)/.env.example
 	@echo ""
 	@echo "[dogfood] Building images from local code (tag :dev)..."
 	DECEPTICON_VERSION=dev $(COMPOSE) --profile cli build

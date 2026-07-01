@@ -36,6 +36,8 @@ class TestIsClaude4Family:
             "claude-opus-4-7",
             "openrouter/anthropic/claude-sonnet-4-5-20250929",
             "bedrock/anthropic.claude-opus-4-7-v1:0",
+            "anthropic/claude-fable-5",
+            "claude-fable-5",
         ],
     )
     def test_positive(self, model: str) -> None:
