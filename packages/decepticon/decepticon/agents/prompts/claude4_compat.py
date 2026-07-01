@@ -97,7 +97,7 @@ _NEUTRAL_PERSONA_PREFIX: Final[str] = (
 # Matches Claude 4+ family regardless of provider prefix (anthropic/,
 # openrouter/anthropic/, bedrock/anthropic., vertex_ai/anthropic.).
 _CLAUDE4_MODEL_RE: Final[re.Pattern[str]] = re.compile(
-    r"claude[-/\.](?:opus|sonnet|haiku)-(4|[5-9])(?:[-.]\d+)*",
+    r"claude[-/\.](?:opus|sonnet|haiku|fable)-(4|[5-9])(?:[-.]\d+)*",
     re.IGNORECASE,
 )
 

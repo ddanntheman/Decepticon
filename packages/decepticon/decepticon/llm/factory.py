@@ -294,6 +294,24 @@ _PLACEHOLDER_TOKENS: tuple[str, ...] = (
     "example",
 )
 
+
+def _is_placeholder_value(value: str) -> bool:
+    """Return True if ``value`` looks like a template placeholder.
+
+    Catches the launcher's ``your-…-here`` template strings and common
+    placeholder tokens. Used by local-method detection functions to
+    prevent unconfigured providers from leaking into the fallback chain
+    when ``env.example`` ships uncommented entries with placeholder values.
+    """
+    v = value.strip().lower()
+    if not v:
+        return True
+    if v.startswith("your-") or v.endswith("-here"):
+        return True
+    if any(token in v for token in _PLACEHOLDER_TOKENS):
+        return True
+    return False
+
 # Minimum length for any value that should be treated as a real key. All
 # vendor-issued keys exceed this — Anthropic ``sk-ant-api03-…`` ≈ 100 chars,
 # OpenAI ``sk-…`` ≥ 48 chars, Google ``AIza…`` 39 chars. 24 leaves headroom
@@ -365,16 +383,29 @@ def _ollama_local_configured() -> bool:
     ``OLLAMA_MODEL`` (a pulled model id) is enough to opt in. Both
     blank → not configured. Empty/whitespace strings are treated as
     "not set" so a stray ``OLLAMA_API_BASE=`` line in .env doesn't
-    silently enable the method.
+    silently enable the method. Placeholder model values (e.g.
+    ``your-ollama-model-here``) are rejected.
     """
-    return bool(os.getenv("OLLAMA_API_BASE", "").strip() or os.getenv("OLLAMA_MODEL", "").strip())
+    base = os.getenv("OLLAMA_API_BASE", "").strip()
+    model = os.getenv("OLLAMA_MODEL", "").strip()
+    if model and _is_placeholder_value(model):
+        return False
+    return bool(base or model)
 
 
 def _lmstudio_local_configured() -> bool:
-    """Return True when the user has wired up local LM Studio."""
-    return bool(
-        os.getenv("LMSTUDIO_API_BASE", "").strip() or os.getenv("LMSTUDIO_MODEL", "").strip()
-    )
+    """Return True when the user has wired up local LM Studio.
+
+    Requires at least one of ``LMSTUDIO_API_BASE`` or ``LMSTUDIO_MODEL``
+    to be set to a non-placeholder value. The ``env.example`` template
+    ships these uncommented with ``your-lmstudio-model-here`` — without
+    this check, every fresh install would think LM Studio is configured.
+    """
+    base = os.getenv("LMSTUDIO_API_BASE", "").strip()
+    model = os.getenv("LMSTUDIO_MODEL", "").strip()
+    if model and _is_placeholder_value(model):
+        return False
+    return bool(base or model)
 
 
 def _llamacpp_local_configured() -> bool:
@@ -385,11 +416,14 @@ def _llamacpp_local_configured() -> bool:
     name) is enough to opt in. ``LLAMACPP_API_KEY`` is *not* required —
     llama-server accepts any string by default and an unset key resolves
     to a literal placeholder via LiteLLM's env interpolation, which the
-    server happily accepts. See issue #151.
+    server happily accepts. Placeholder model values are rejected.
+    See issue #151.
     """
-    return bool(
-        os.getenv("LLAMACPP_API_BASE", "").strip() or os.getenv("LLAMACPP_MODEL", "").strip()
-    )
+    base = os.getenv("LLAMACPP_API_BASE", "").strip()
+    model = os.getenv("LLAMACPP_MODEL", "").strip()
+    if model and _is_placeholder_value(model):
+        return False
+    return bool(base or model)
 
 
 def _custom_openai_configured() -> bool:
@@ -858,6 +892,7 @@ class _ProxiedChatOpenAI(ChatOpenAI):
         except Exception as exc:
             _reraise_with_actionable_message(exc, self.model_name)
             raise
+        _check_empty_response(result, self.model_name)
         _log_served_model(self.model_name, result)
         return result
 
@@ -875,6 +910,7 @@ class _ProxiedChatOpenAI(ChatOpenAI):
         except Exception as exc:
             _reraise_with_actionable_message(exc, self.model_name)
             raise
+        _check_empty_response(result, self.model_name)
         _log_served_model(self.model_name, result)
         return result
 
@@ -901,6 +937,30 @@ def _log_served_model(requested: str, result: object) -> None:
             log.debug("llm.attribution requested=%s served=%s", requested, served)
     except Exception:
         pass
+
+
+def _check_empty_response(result: Any, model_name: str) -> None:
+    """Check if the model returned an empty response and raise an exception."""
+    from langchain_core.messages import AIMessage
+
+    if isinstance(result, AIMessage):
+        content_str = str(result.content).strip()
+        has_tools = bool(getattr(result, "tool_calls", None))
+        has_reasoning = bool(result.additional_kwargs.get("reasoning_content"))
+
+        # Check if the response is completely empty (no text, no tools, no reasoning)
+        if not content_str and not has_tools and not has_reasoning:
+            finish_reason = result.response_metadata.get("finish_reason") or ""
+            if finish_reason == "content_filter":
+                raise RuntimeError(
+                    f"Model {model_name} returned an empty response with finish_reason='content_filter'. "
+                    f"This indicates a safety refusal."
+                )
+            else:
+                raise RuntimeError(
+                    f"Model {model_name} returned an empty response (no content, no tool calls, no reasoning). "
+                    f"This indicates a potential safety refusal or API failure."
+                )
 
 
 def _model_drops_temperature(model: str) -> bool:
@@ -939,6 +999,16 @@ def _model_is_deepseek_thinking(model: str) -> bool:
     return slug in ("deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner")
 
 
+def _model_is_moonshot_thinking(model: str) -> bool:
+    """Return True for Moonshot Kimi models.
+
+    Moonshot's kimi models (e.g. kimi-k2.6) use thinking/reasoning mode and
+    return ``reasoning_content`` in assistant messages.
+    """
+    slug = model.rsplit("/", 1)[-1].lower()
+    return slug.startswith("kimi-") or slug.startswith("moonshot-")
+
+
 def _model_is_nvidia_nim(model: str) -> bool:
     """Return True for any nvidia_nim/* route.
 
@@ -955,22 +1025,10 @@ def _model_is_nvidia_nim(model: str) -> bool:
     return model.lower().startswith("nvidia_nim/")
 
 
-class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
-    """ChatOpenAI subclass that preserves DeepSeek ``reasoning_content``.
+class _ThinkingChatOpenAI(_ProxiedChatOpenAI):
+    """ChatOpenAI subclass that preserves ``reasoning_content`` in assistant messages.
 
-    DeepSeek V4 Pro's thinking mode returns ``reasoning_content`` alongside
-    ``content`` in assistant messages. When tool calls are present, this field
-    **must** be passed back in all subsequent API requests. LangChain's default
-    message converters silently drop it in both directions:
-
-    1. Response → AIMessage: ``reasoning_content`` is not extracted
-    2. AIMessage → request dict: ``reasoning_content`` is not serialized
-
-    This class patches both directions by:
-    - Storing ``reasoning_content`` in ``AIMessage.additional_kwargs``
-    - Injecting it back into request dicts for assistant messages
-    - Passing ``extra_body={"thinking": {"type": "enabled"}}`` and
-      ``reasoning_effort="high"`` on every request
+    Preserves reasoning_content in both directions (Response -> AIMessage and AIMessage -> request dict).
     """
 
     def _get_request_payload(
@@ -983,15 +1041,8 @@ class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
         """Inject reasoning_content into outbound assistant messages."""
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
 
-        # Inject DeepSeek thinking mode params
-        extra_body = payload.get("extra_body") or {}
-        extra_body["thinking"] = {"type": "enabled"}
-        payload["extra_body"] = extra_body
-        payload["reasoning_effort"] = "high"
-
         # Walk the messages array and inject reasoning_content from
-        # additional_kwargs back into assistant message dicts so the
-        # DeepSeek API sees them.
+        # additional_kwargs back into assistant message dicts.
         for msg in payload.get("messages", []):
             if msg.get("role") != "assistant":
                 continue
@@ -1113,6 +1164,32 @@ class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
                 msg.additional_kwargs["reasoning_content"] = rc
 
         return result
+
+
+class _DeepSeekThinkingChatOpenAI(_ThinkingChatOpenAI):
+    """ChatOpenAI subclass that preserves DeepSeek ``reasoning_content`` and injects thinking params."""
+
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+
+        # Inject DeepSeek thinking mode params
+        extra_body = payload.get("extra_body") or {}
+        extra_body["thinking"] = {"type": "enabled"}
+        payload["extra_body"] = extra_body
+        payload["reasoning_effort"] = "high"
+
+        return payload
+
+
+class _MoonshotThinkingChatOpenAI(_ThinkingChatOpenAI):
+    """ChatOpenAI subclass that preserves Moonshot/Kimi ``reasoning_content``."""
+    pass
 
 
 class _NvidiaNIMChatOpenAI(_ProxiedChatOpenAI):
@@ -1617,10 +1694,15 @@ class LLMFactory:
         elif _model_is_deepseek_thinking(model):
             # DeepSeek V4 Pro thinking mode rejects temperature.
             kwargs["disabled_params"] = {"temperature": None}
+        elif _model_is_moonshot_thinking(model):
+            # Moonshot Kimi thinking mode rejects temperature (only 1 is allowed).
+            kwargs["disabled_params"] = {"temperature": None}
         else:
             kwargs["temperature"] = temperature
         if _model_is_deepseek_thinking(model):
             return _DeepSeekThinkingChatOpenAI(**kwargs)
+        elif _model_is_moonshot_thinking(model):
+            return _MoonshotThinkingChatOpenAI(**kwargs)
         if _model_is_nvidia_nim(model):
             return _NvidiaNIMChatOpenAI(**kwargs)
         return _ProxiedChatOpenAI(**kwargs)

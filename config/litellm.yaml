@@ -38,15 +38,37 @@ model_list:
   # /spend/logs to populate cost instead of ``None / 0``. Sonnet/Haiku
   # are pinned too so we own the price source of truth instead of
   # silently drifting if Anthropic's map updates.
+  - model_name: anthropic/claude-fable-5
+    litellm_params:
+      model: claude-fable-5
+      custom_llm_provider: anthropic
+      api_key: os.environ/ANTHROPIC_API_KEY
+      additional_drop_params: ["temperature"]
+      max_tokens: 128000
+    model_info:
+      input_cost_per_token: 0.000010
+      output_cost_per_token: 0.000050
+
   - model_name: anthropic/claude-opus-4-8
     litellm_params:
-      model: anthropic/claude-opus-4-8
+      model: claude-opus-4-8
+      custom_llm_provider: anthropic
       api_key: os.environ/ANTHROPIC_API_KEY
       additional_drop_params: ["temperature"]
       max_tokens: 128000
     model_info:
       input_cost_per_token: 0.000005
       output_cost_per_token: 0.000025
+
+  - model_name: anthropic/claude-sonnet-5
+    litellm_params:
+      model: claude-sonnet-5
+      custom_llm_provider: anthropic
+      api_key: os.environ/ANTHROPIC_API_KEY
+      max_tokens: 64000
+    model_info:
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
 
   - model_name: anthropic/claude-opus-4-7
     litellm_params:
@@ -239,6 +261,34 @@ model_list:
       input_cost_per_token: 0.0000003
       output_cost_per_token: 0.0000012
 
+  # ── Moonshot / Kimi ──────────────────────────────────────────────────
+  # Native LiteLLM moonshot/ provider — registry-registered model IDs.
+  - model_name: moonshot/kimi-k2.6
+    litellm_params:
+      model: moonshot/kimi-k2.6
+      api_key: os.environ/MOONSHOT_API_KEY
+      additional_drop_params: ["temperature"]
+  - model_name: moonshot/kimi-k2.7-code
+    litellm_params:
+      model: moonshot/kimi-k2.7-code
+      api_key: os.environ/MOONSHOT_API_KEY
+      additional_drop_params: ["temperature"]
+  - model_name: moonshot/kimi-k2-instruct
+    litellm_params:
+      model: moonshot/kimi-k2-instruct
+      api_key: os.environ/MOONSHOT_API_KEY
+      additional_drop_params: ["temperature"]
+  - model_name: moonshot/moonshot-v1-8k
+    litellm_params:
+      model: moonshot/moonshot-v1-8k
+      api_key: os.environ/MOONSHOT_API_KEY
+      additional_drop_params: ["temperature"]
+  - model_name: moonshot/moonshot-v1-128k
+    litellm_params:
+      model: moonshot/moonshot-v1-128k
+      api_key: os.environ/MOONSHOT_API_KEY
+      additional_drop_params: ["temperature"]
+
   # ── Claude Code Auth (OAuth subscription) ────────────────────────────
   # ``additional_drop_params: ["temperature"]`` matches the api-key opus entry —
   # Opus 4.7 rejects the param on every route, OAuth path included.
@@ -249,6 +299,15 @@ model_list:
   # "API-equivalent cost" — useful for comparing benchmark cost across
   # paid-API and subscription routes apples-to-apples. The OSS user's
   # actual bill is the subscription fee; this number is opportunity cost.
+  - model_name: auth/claude-fable-5
+    litellm_params:
+      model: auth/claude-fable-5
+      additional_drop_params: ["temperature"]
+      max_tokens: 128000
+    model_info:
+      input_cost_per_token: 0.000010
+      output_cost_per_token: 0.000050
+
   - model_name: auth/claude-opus-4-8
     litellm_params:
       model: auth/claude-opus-4-8
@@ -257,6 +316,14 @@ model_list:
     model_info:
       input_cost_per_token: 0.000005
       output_cost_per_token: 0.000025
+
+  - model_name: auth/claude-sonnet-5
+    litellm_params:
+      model: auth/claude-sonnet-5
+      max_tokens: 64000
+    model_info:
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
 
   - model_name: auth/claude-opus-4-7
     litellm_params:
@@ -376,6 +443,16 @@ model_list:
   # 5.5 % fee only applies on credit-purchase deposits). The Claude
   # pricing block above is the source of truth — we mirror those values
   # here so /spend/logs captures cost for the OpenRouter routes too.
+  - model_name: openrouter/anthropic/claude-fable-5
+    litellm_params:
+      model: openrouter/anthropic/claude-fable-5
+      api_key: os.environ/OPENROUTER_API_KEY
+      additional_drop_params: ["temperature"]
+      max_tokens: 128000
+    model_info:
+      input_cost_per_token: 0.000010
+      output_cost_per_token: 0.000050
+
   - model_name: openrouter/anthropic/claude-opus-4-8
     litellm_params:
       model: openrouter/anthropic/claude-opus-4-8
@@ -385,6 +462,15 @@ model_list:
     model_info:
       input_cost_per_token: 0.000005
       output_cost_per_token: 0.000025
+
+  - model_name: openrouter/anthropic/claude-sonnet-5
+    litellm_params:
+      model: openrouter/anthropic/claude-sonnet-5
+      api_key: os.environ/OPENROUTER_API_KEY
+      max_tokens: 64000
+    model_info:
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
 
   - model_name: openrouter/anthropic/claude-opus-4-7
     litellm_params:
@@ -516,6 +602,33 @@ model_list:
       output_cost_per_token: 0
 
   # Vercel AI Gateway — https://ai-gateway.vercel.sh/v1
+  - model_name: vercel/anthropic/claude-fable-5
+    litellm_params:
+      model: openai/anthropic/claude-fable-5
+      api_base: https://ai-gateway.vercel.sh/v1
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+    model_info:
+      input_cost_per_token: 0.000010
+      output_cost_per_token: 0.000050
+
+  - model_name: vercel/anthropic/claude-opus-4-8
+    litellm_params:
+      model: openai/anthropic/claude-opus-4-8
+      api_base: https://ai-gateway.vercel.sh/v1
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+    model_info:
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
+
+  - model_name: vercel/anthropic/claude-sonnet-5
+    litellm_params:
+      model: openai/anthropic/claude-sonnet-5
+      api_base: https://ai-gateway.vercel.sh/v1
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+    model_info:
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
+
   - model_name: vercel/anthropic/claude-opus-4.6
     litellm_params:
       model: openai/anthropic/claude-opus-4.6
@@ -594,6 +707,33 @@ model_list:
       output_cost_per_token: 0
 
   # NanoGPT — https://nano-gpt.com/api/v1
+  - model_name: nanogpt/anthropic/claude-fable-5
+    litellm_params:
+      model: openai/anthropic/claude-fable-5
+      api_base: https://nano-gpt.com/api/v1
+      api_key: os.environ/NANOGPT_API_KEY
+    model_info:
+      input_cost_per_token: 0.000010
+      output_cost_per_token: 0.000050
+
+  - model_name: nanogpt/anthropic/claude-opus-4-8
+    litellm_params:
+      model: openai/anthropic/claude-opus-4-8
+      api_base: https://nano-gpt.com/api/v1
+      api_key: os.environ/NANOGPT_API_KEY
+    model_info:
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
+
+  - model_name: nanogpt/anthropic/claude-sonnet-5
+    litellm_params:
+      model: openai/anthropic/claude-sonnet-5
+      api_base: https://nano-gpt.com/api/v1
+      api_key: os.environ/NANOGPT_API_KEY
+    model_info:
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
+
   - model_name: nanogpt/anthropic/claude-opus-4.6
     litellm_params:
       model: openai/anthropic/claude-opus-4.6
@@ -646,6 +786,33 @@ model_list:
       output_cost_per_token: 0
 
   # ZenMux — https://zenmux.ai/api/v1
+  - model_name: zenmux/anthropic/claude-fable-5
+    litellm_params:
+      model: openai/anthropic/claude-fable-5
+      api_base: https://zenmux.ai/api/v1
+      api_key: os.environ/ZENMUX_API_KEY
+    model_info:
+      input_cost_per_token: 0.000010
+      output_cost_per_token: 0.000050
+
+  - model_name: zenmux/anthropic/claude-opus-4-8
+    litellm_params:
+      model: openai/anthropic/claude-opus-4-8
+      api_base: https://zenmux.ai/api/v1
+      api_key: os.environ/ZENMUX_API_KEY
+    model_info:
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
+
+  - model_name: zenmux/anthropic/claude-sonnet-5
+    litellm_params:
+      model: openai/anthropic/claude-sonnet-5
+      api_base: https://zenmux.ai/api/v1
+      api_key: os.environ/ZENMUX_API_KEY
+    model_info:
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
+
   - model_name: zenmux/anthropic/claude-opus-4.6
     litellm_params:
       model: openai/anthropic/claude-opus-4.6
@@ -702,6 +869,33 @@ model_list:
   # ``…/compat`` path; that path is Cloudflare-deprecated (still works for
   # existing integrations) — the newer REST endpoint
   # ``…/accounts/<id>/ai/v1`` is an alternative the operator can use instead.
+  - model_name: cfgateway/anthropic/claude-fable-5
+    litellm_params:
+      model: openai/anthropic/claude-fable-5
+      api_base: os.environ/CLOUDFLARE_AI_GATEWAY_API_BASE
+      api_key: os.environ/CLOUDFLARE_AI_GATEWAY_API_KEY
+    model_info:
+      input_cost_per_token: 0.000010
+      output_cost_per_token: 0.000050
+
+  - model_name: cfgateway/anthropic/claude-opus-4-8
+    litellm_params:
+      model: openai/anthropic/claude-opus-4-8
+      api_base: os.environ/CLOUDFLARE_AI_GATEWAY_API_BASE
+      api_key: os.environ/CLOUDFLARE_AI_GATEWAY_API_KEY
+    model_info:
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
+
+  - model_name: cfgateway/anthropic/claude-sonnet-5
+    litellm_params:
+      model: openai/anthropic/claude-sonnet-5
+      api_base: os.environ/CLOUDFLARE_AI_GATEWAY_API_BASE
+      api_key: os.environ/CLOUDFLARE_AI_GATEWAY_API_KEY
+    model_info:
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
+
   - model_name: cfgateway/anthropic/claude-opus-4-6
     litellm_params:
       model: openai/anthropic/claude-opus-4-6
@@ -789,11 +983,15 @@ router_settings:
   fallbacks:
     # Anthropic API path (opus-4-8 is the current flagship; 4.7 is the
     # first within-provider step down before sonnet/haiku)
-    - {"anthropic/claude-opus-4-8": ["anthropic/claude-opus-4-7"]}
+    - {"anthropic/claude-fable-5": ["anthropic/claude-opus-4-8"]}
+    - {"anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"anthropic/claude-sonnet-5": ["anthropic/claude-haiku-4-5"]}
     - {"anthropic/claude-opus-4-7": ["anthropic/claude-sonnet-4-6"]}
     - {"anthropic/claude-sonnet-4-6": ["anthropic/claude-haiku-4-5"]}
     # Anthropic OAuth (Claude Code subscription) path
-    - {"auth/claude-opus-4-8": ["auth/claude-opus-4-7"]}
+    - {"auth/claude-fable-5": ["auth/claude-opus-4-8"]}
+    - {"auth/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"auth/claude-sonnet-5": ["auth/claude-haiku-4-5"]}
     - {"auth/claude-opus-4-7": ["auth/claude-sonnet-4-6"]}
     - {"auth/claude-sonnet-4-6": ["auth/claude-haiku-4-5"]}
     # OAuth → paid API key cross-method backstop. When the entire OAuth
@@ -803,9 +1001,12 @@ router_settings:
     # if one is configured. LiteLLM silently skips entries whose target
     # model_group is not registered, so this is a no-op for users without
     # ANTHROPIC_API_KEY.
+    - {"auth/claude-sonnet-5": ["anthropic/claude-sonnet-5"]}
     - {"auth/claude-haiku-4-5": ["anthropic/claude-haiku-4-5"]}
     # OpenRouter mirrors of the Anthropic models
-    - {"openrouter/anthropic/claude-opus-4-8": ["openrouter/anthropic/claude-opus-4-7"]}
+    - {"openrouter/anthropic/claude-fable-5": ["openrouter/anthropic/claude-opus-4-8"]}
+    - {"openrouter/anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"openrouter/anthropic/claude-sonnet-5": ["openrouter/anthropic/claude-haiku-4-5"]}
     - {"openrouter/anthropic/claude-opus-4-7": ["openrouter/anthropic/claude-sonnet-4-6"]}
     - {"openrouter/anthropic/claude-sonnet-4-6": ["openrouter/anthropic/claude-haiku-4-5"]}
     # OpenAI direct API
@@ -841,20 +1042,32 @@ router_settings:
     # before ModelFallbackMiddleware crosses to another provider.
     - {"opencode/claude-opus-4-6": ["opencode/gpt-5.4"]}
     - {"opencode/gpt-5.4": ["opencode/glm-5-free"]}
+    - {"vercel/anthropic/claude-fable-5": ["vercel/anthropic/claude-opus-4-8"]}
+    - {"vercel/anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"vercel/anthropic/claude-sonnet-5": ["vercel/anthropic/claude-haiku-4.5"]}
     - {"vercel/anthropic/claude-opus-4.6": ["vercel/anthropic/claude-sonnet-4.6"]}
     - {"vercel/anthropic/claude-sonnet-4.6": ["vercel/anthropic/claude-haiku-4.5"]}
     - {"hf/deepseek-ai/DeepSeek-V3.1": ["hf/meta-llama/Llama-3.3-70B-Instruct-Turbo"]}
     - {"hf/meta-llama/Llama-3.3-70B-Instruct-Turbo": ["hf/openai/gpt-oss-120b"]}
     - {"venice/claude-opus-4-6": ["venice/claude-sonnet-4-6"]}
     - {"venice/claude-sonnet-4-6": ["venice/deepseek-v4-flash"]}
+    - {"nanogpt/anthropic/claude-fable-5": ["nanogpt/anthropic/claude-opus-4-8"]}
+    - {"nanogpt/anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"nanogpt/anthropic/claude-sonnet-5": ["nanogpt/anthropic/claude-haiku-4.5"]}
     - {"nanogpt/anthropic/claude-opus-4.6": ["nanogpt/anthropic/claude-sonnet-4.6"]}
     - {"nanogpt/anthropic/claude-sonnet-4.6": ["nanogpt/anthropic/claude-haiku-4.5"]}
     - {"synthetic/hf:deepseek-ai/DeepSeek-V3.2": ["synthetic/hf:meta-llama/Llama-3.3-70B-Instruct"]}
     - {"synthetic/hf:meta-llama/Llama-3.3-70B-Instruct": ["synthetic/hf:openai/gpt-oss-120b"]}
+    - {"zenmux/anthropic/claude-fable-5": ["zenmux/anthropic/claude-opus-4-8"]}
+    - {"zenmux/anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"zenmux/anthropic/claude-sonnet-5": ["zenmux/anthropic/claude-haiku-4.5"]}
     - {"zenmux/anthropic/claude-opus-4.6": ["zenmux/anthropic/claude-sonnet-4.6"]}
     - {"zenmux/anthropic/claude-sonnet-4.6": ["zenmux/anthropic/claude-haiku-4.5"]}
     - {"qianfan/ernie-4.5-turbo-128k": ["qianfan/ernie-4.5-turbo-32k"]}
     - {"qianfan/ernie-4.5-turbo-32k": ["qianfan/ernie-speed-pro-128k"]}
+    - {"cfgateway/anthropic/claude-fable-5": ["cfgateway/anthropic/claude-opus-4-8"]}
+    - {"cfgateway/anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"cfgateway/anthropic/claude-sonnet-5": ["cfgateway/anthropic/claude-haiku-4-5"]}
     - {"cfgateway/anthropic/claude-opus-4-6": ["cfgateway/anthropic/claude-sonnet-4-6"]}
     - {"cfgateway/anthropic/claude-sonnet-4-6": ["cfgateway/anthropic/claude-haiku-4-5"]}
     # Copilot, SuperGrok, Perplexity fallbacks (registered dynamically)

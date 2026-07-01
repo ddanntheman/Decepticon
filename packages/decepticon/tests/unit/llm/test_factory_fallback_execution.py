@@ -167,3 +167,29 @@ class TestFallbackExecution:
 
         assert result is ok_message
         assert calls == [primary.model_name]
+
+    def test_safety_refusal_empty_response_uses_fallback(self, monkeypatch, chain) -> None:
+        primary, fallbacks = chain
+        fallback_used = fallbacks[0]
+        refusal_message = AIMessage(
+            content="",
+            response_metadata={"finish_reason": "content_filter"}
+        )
+        ok_message = AIMessage(content="from-fallback-after-refusal")
+        calls: list[str] = []
+
+        def fake_invoke(self, *args, **kwargs):
+            calls.append(self.model_name)
+            if self.model_name == primary.model_name:
+                return refusal_message
+            if self.model_name == fallback_used.model_name:
+                return ok_message
+            raise AssertionError(f"unexpected fallback hit: {self.model_name}")
+
+        monkeypatch.setattr(BaseChatModel, "invoke", fake_invoke)
+
+        mw = ModelFallbackMiddleware(*fallbacks)
+        result = mw.wrap_model_call(_make_request(primary), _handler)
+
+        assert result is ok_message
+        assert calls == [primary.model_name, fallback_used.model_name]

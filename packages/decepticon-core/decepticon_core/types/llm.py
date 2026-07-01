@@ -34,13 +34,13 @@ User has [openai_api]. Profile=eco.
 Tier × AuthMethod matrix
 ------------------------
                     HIGH                          MID                            LOW
-  anthropic_api    claude-opus-4-8               claude-sonnet-4-6              claude-haiku-4-5
-  anthropic_oauth  auth/claude-opus-4-8          auth/claude-sonnet-4-6         auth/claude-haiku-4-5
+  anthropic_api    claude-fable-5                claude-opus-4-8                claude-sonnet-5
+  anthropic_oauth  auth/claude-fable-5           auth/claude-opus-4-8           auth/claude-sonnet-5
   openai_api       gpt-5.5                       gpt-5.4                        gpt-5-nano
   openai_oauth     auth/gpt-5.5                  auth/gpt-5.4                   auth/gpt-5.4-mini
   google_api       gemini-2.5-pro                gemini-2.5-flash               gemini-2.5-flash-lite
   minimax_api      MiniMax-M3                    MiniMax-M2.7-highspeed         — (falls through)
-  openrouter_api   claude-opus-4-8               claude-sonnet-4-6              claude-haiku-4-5
+  openrouter_api   claude-fable-5                claude-opus-4-8                claude-sonnet-5
   nvidia_api       llama-3.3-70b-instruct        nemotron-70b-instruct          llama-3.2-3b-instruct
   xai_api          grok-4.3                      grok-4-1-fast-reasoning        — (falls through)
   copilot_oauth    copilot/gpt-5.5               copilot/claude-sonnet-4-6      copilot/gpt-5.4-mini
@@ -57,14 +57,14 @@ collide in the model_list.
 
                     HIGH                          MID                            LOW
   opencode_api     opencode/claude-opus-4-6      opencode/gpt-5.4               opencode/glm-5-free
-  vercel_gateway   vercel/anthropic/…opus-4.6    vercel/anthropic/…sonnet-4.6  vercel/anthropic/…haiku-4.5
+  vercel_gateway   vercel/anthropic/…fable-5     vercel/anthropic/…opus-4-8     vercel/anthropic/…sonnet-5
   huggingface_api  hf/…/DeepSeek-V3.1            hf/…/Llama-3.3-70B-…Turbo     hf/openai/gpt-oss-120b
   venice_api       venice/claude-opus-4-6        venice/claude-sonnet-4-6      venice/deepseek-v4-flash
-  nanogpt_api      nanogpt/…/claude-opus-4.6     nanogpt/…/claude-sonnet-4.6   nanogpt/…/claude-3-5-haiku
+  nanogpt_api      nanogpt/…/claude-fable-5      nanogpt/…/claude-opus-4-8     nanogpt/…/claude-sonnet-5
   synthetic_api    synthetic/hf:…/DeepSeek-V3.2  synthetic/hf:…/Llama-3.3-70B  synthetic/hf:openai/gpt-oss
-  zenmux_api       zenmux/anthropic/…opus-4.6    zenmux/anthropic/…sonnet-4.6  zenmux/anthropic/…haiku-4.5
+  zenmux_api       zenmux/anthropic/…fable-5     zenmux/anthropic/…opus-4-8     zenmux/anthropic/…sonnet-5
   qianfan_api      qianfan/ernie-4.5-turbo-128k  qianfan/ernie-4.5-turbo-32k   qianfan/ernie-speed-pro-128k
-  cloudflare_gw    cfgateway/anthropic/…opus     cfgateway/anthropic/…sonnet   cfgateway/anthropic/…haiku
+  cloudflare_gw    cfgateway/anthropic/…fable-5  cfgateway/anthropic/…opus-4-8 cfgateway/anthropic/…sonnet-5
 
 Code-heavy override
 -------------------
@@ -174,12 +174,12 @@ class AuthMethod(StrEnum):
 METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.ANTHROPIC_API: {
         Tier.HIGH: "anthropic/claude-opus-4-8",
-        Tier.MID: "anthropic/claude-sonnet-4-6",
+        Tier.MID: "anthropic/claude-sonnet-5",
         Tier.LOW: "anthropic/claude-haiku-4-5",
     },
     AuthMethod.ANTHROPIC_OAUTH: {
         Tier.HIGH: "auth/claude-opus-4-8",
-        Tier.MID: "auth/claude-sonnet-4-6",
+        Tier.MID: "auth/claude-sonnet-5",
         Tier.LOW: "auth/claude-haiku-4-5",
     },
     AuthMethod.OPENAI_API: {
@@ -227,7 +227,7 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     },
     AuthMethod.OPENROUTER_API: {
         Tier.HIGH: "openrouter/anthropic/claude-opus-4-8",
-        Tier.MID: "openrouter/anthropic/claude-sonnet-4-6",
+        Tier.MID: "openrouter/anthropic/claude-sonnet-5",
         Tier.LOW: "openrouter/anthropic/claude-haiku-4-5",
     },
     AuthMethod.NVIDIA_API: {
@@ -355,8 +355,8 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     # keep their context-tier suffixes (8k/32k/128k).
     AuthMethod.MOONSHOT_API: {
         Tier.HIGH: "moonshot/kimi-k2-instruct",
-        Tier.MID: "moonshot/moonshot-v1-128k",
-        Tier.LOW: "moonshot/moonshot-v1-8k",
+        Tier.MID: "moonshot/kimi-k2-instruct",
+        Tier.LOW: "moonshot/kimi-k2-instruct",
     },
     # Z.ai GLM family — native ``zai/`` LiteLLM provider (no custom shim
     # needed since LiteLLM 1.55+). LOW = glm-4.5-flash, the free-tier
@@ -443,8 +443,8 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         # Vercel AI Gateway — https://ai-gateway.vercel.sh/v1. Model ids
         # are ``creator/model``; route the Anthropic family for tool-call
         # reliability parity with the native anthropic path.
-        Tier.HIGH: "vercel/anthropic/claude-opus-4.6",
-        Tier.MID: "vercel/anthropic/claude-sonnet-4.6",
+        Tier.HIGH: "vercel/anthropic/claude-opus-4-8",
+        Tier.MID: "vercel/anthropic/claude-sonnet-5",
         Tier.LOW: "vercel/anthropic/claude-haiku-4.5",
     },
     AuthMethod.HUGGINGFACE_API: {
@@ -464,9 +464,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.NANOGPT_API: {
         # NanoGPT — https://nano-gpt.com/api/v1, pay-as-you-go aggregator
         # exposing ``creator/model`` slugs across most major vendors.
-        Tier.HIGH: "nanogpt/anthropic/claude-opus-4.6",
-        Tier.MID: "nanogpt/anthropic/claude-sonnet-4.6",
-        Tier.LOW: "nanogpt/anthropic/claude-3-5-haiku-20241022",
+        Tier.HIGH: "nanogpt/anthropic/claude-opus-4-8",
+        Tier.MID: "nanogpt/anthropic/claude-sonnet-5",
+        Tier.LOW: "nanogpt/anthropic/claude-haiku-4.5",
     },
     AuthMethod.SYNTHETIC_API: {
         # Synthetic — https://api.synthetic.new/openai/v1. Open-weight
@@ -478,8 +478,8 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.ZENMUX_API: {
         # ZenMux — https://zenmux.ai/api/v1. Multi-vendor gateway; route
         # the Anthropic family for tool-call parity.
-        Tier.HIGH: "zenmux/anthropic/claude-opus-4.6",
-        Tier.MID: "zenmux/anthropic/claude-sonnet-4.6",
+        Tier.HIGH: "zenmux/anthropic/claude-opus-4-8",
+        Tier.MID: "zenmux/anthropic/claude-sonnet-5",
         Tier.LOW: "zenmux/anthropic/claude-haiku-4.5",
     },
     AuthMethod.QIANFAN_API: {
@@ -498,8 +498,8 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         # comes from CLOUDFLARE_AI_GATEWAY_API_BASE (the OpenAI-compat
         # ``.../compat`` path). Model slugs are the gateway's
         # ``provider/model`` form proxied to Anthropic.
-        Tier.HIGH: "cfgateway/anthropic/claude-opus-4-6",
-        Tier.MID: "cfgateway/anthropic/claude-sonnet-4-6",
+        Tier.HIGH: "cfgateway/anthropic/claude-opus-4-8",
+        Tier.MID: "cfgateway/anthropic/claude-sonnet-5",
         Tier.LOW: "cfgateway/anthropic/claude-haiku-4-5",
     },
 }
@@ -518,6 +518,7 @@ AGENT_TIERS: dict[str, Tier] = {
     "patcher": Tier.HIGH,
     "contract_auditor": Tier.HIGH,
     "analyst": Tier.HIGH,
+    "asvs_assessor": Tier.HIGH,
     "vulnresearch": Tier.HIGH,
     # MID — precision execution, code generation, structured judgment.
     # Tool-heavy with moderate iteration.
@@ -574,6 +575,7 @@ AGENT_TEMPERATURES: dict[str, float] = {
     "contract_auditor": 0.2,
     "reverser": 0.2,
     "analyst": 0.2,
+    "asvs_assessor": 0.2,
     "scanner": 0.2,
     "vulnresearch": 0.4,
     "recon": 0.3,
