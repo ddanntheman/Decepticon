@@ -202,6 +202,7 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
     # ingest paths still route through the ``graph_transaction`` shim
     # and migrate to KGStore in a separate RFC.
     "analyst": _BASH_AGENT_SLOTS | {MiddlewareSlot.KG},
+    "asvs_assessor": _BASH_AGENT_SLOTS,
     "reverser": _BASH_AGENT_SLOTS,
     "contract_auditor": _BASH_AGENT_SLOTS | {MiddlewareSlot.KG},
     "cloud_hunter": _BASH_AGENT_SLOTS,

@@ -163,6 +163,7 @@ enabled = ["standard", "plugins", "bounty"]
 recon = "decepticon.agents.standard.recon:SUBAGENT_SPEC"
 exploit = "decepticon.agents.standard.exploit:SUBAGENT_SPEC"
 analyst = "decepticon.agents.standard.analyst:SUBAGENT_SPEC"
+asvs_assessor = "decepticon.agents.standard.asvs_assessor:SUBAGENT_SPEC"
 reverser = "decepticon.agents.standard.reverser:SUBAGENT_SPEC"
 contract_auditor = "decepticon.agents.standard.contract_auditor:SUBAGENT_SPEC"
 cloud_hunter = "decepticon.agents.standard.cloud_hunter:SUBAGENT_SPEC"

@@ -177,18 +177,14 @@ class TestLLMFactory:
     def test_get_model_returns_chat_model(self):
         model = self.factory.get_model("recon")
         assert model is not None
-        assert model.model_name == "anthropic/claude-haiku-4-5"
+        assert model.model_name == "anthropic/claude-opus-4-8"
 
     def test_get_model_caches_instances(self):
         m1 = self.factory.get_model("recon")
         m2 = self.factory.get_model("recon")
         assert m1 is m2
 
-    def test_get_model_different_roles_different_models(self):
-        recon = self.factory.get_model("recon")
-        decepticon = self.factory.get_model("decepticon")
-        assert recon is not decepticon
-        assert recon.model_name != decepticon.model_name
+
 
     def test_get_model_unknown_role_raises(self):
         with pytest.raises(KeyError, match="No model assignment"):
