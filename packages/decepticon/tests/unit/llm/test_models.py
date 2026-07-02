@@ -462,14 +462,14 @@ class TestLLMModelMapping:
         a = m.get_assignment("decepticon")
         assert a.primary == "anthropic/claude-opus-4-8"
         assert a.fallbacks == []
- 
+
     def test_from_credentials_oauth_plus_api(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.ANTHROPIC_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         a = m.get_assignment("decepticon")
         assert a.primary == "auth/claude-opus-4-8"
         assert a.fallbacks == ["anthropic/claude-opus-4-8"]
- 
+
     def test_from_credentials_full_chain_high_tier(self):
         # Every method configured → every method appears in the HIGH-tier chain
         # in priority order. ModelFallbackMiddleware walks the full list.
@@ -491,7 +491,7 @@ class TestLLMModelMapping:
             "gemini/gemini-2.5-pro",
             "minimax/MiniMax-M3",
         ]
- 
+
     def test_from_credentials_full_chain_low_tier_skips_minimax(self):
         # MiniMax has no LOW model → drops out of the chain at LOW tier.
         creds = Credentials(
@@ -509,14 +509,14 @@ class TestLLMModelMapping:
             "openai/gpt-5-nano",
             "gemini/gemini-2.5-flash-lite",
         ]
- 
+
     def test_from_credentials_low_tier_minimax_skipped(self):
         creds = Credentials(methods=[AuthMethod.MINIMAX_API, AuthMethod.OPENAI_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         recon = m.get_assignment("recon")
         assert recon.primary == "openai/gpt-5-nano"
         assert recon.fallbacks == []
- 
+
     def test_from_credentials_minimax_only_low_role_dropped(self):
         # No method supplies a LOW model → recon (LOW tier) is omitted from
         # the mapping. HIGH/MID roles still resolve.
@@ -525,17 +525,17 @@ class TestLLMModelMapping:
         with pytest.raises(KeyError):
             m.get_assignment("recon")
         assert m.get_assignment("decepticon").primary == "minimax/MiniMax-M3"
- 
+
     def test_max_profile_promotes_recon_to_high(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.MAX)
         assert m.get_assignment("recon").primary == "anthropic/claude-opus-4-8"
- 
+
     def test_test_profile_demotes_decepticon_to_low(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.TEST)
         assert m.get_assignment("decepticon").primary == "anthropic/claude-haiku-4-5"
- 
+
     def test_from_profile_uses_all_api_methods(self):
         m = LLMModelMapping.from_profile(ModelProfile.ECO)
         a = m.get_assignment("decepticon")

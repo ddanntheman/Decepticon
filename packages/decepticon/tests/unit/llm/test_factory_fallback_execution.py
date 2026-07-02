@@ -172,8 +172,7 @@ class TestFallbackExecution:
         primary, fallbacks = chain
         fallback_used = fallbacks[0]
         refusal_message = AIMessage(
-            content="",
-            response_metadata={"finish_reason": "content_filter"}
+            content="", response_metadata={"finish_reason": "content_filter"}
         )
         ok_message = AIMessage(content="from-fallback-after-refusal")
         calls: list[str] = []
