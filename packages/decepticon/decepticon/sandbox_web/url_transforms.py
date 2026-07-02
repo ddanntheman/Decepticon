@@ -61,7 +61,10 @@ def _drop_www(url: str) -> Optional[str]:
     host = parts.hostname or ""
     if not host.startswith("www."):
         return None
-    return _replace_host(url, host[4:])
+    new_host = host[4:]
+    if parts.port:
+        new_host = f"{new_host}:{parts.port}"
+    return _replace_host(url, new_host)
 
 
 TRANSFORMS: dict[str, Callable[[str], Optional[str]]] = {

@@ -160,6 +160,39 @@ def test_retry_budget_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     assert max(sleep_calls) <= 8.0
 
 
+def test_retry_budget_env_override_lets_dev_fail_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Single-tenant / dev can shrink the connect budget via
+    ``DECEPTICON_SANDBOX_CONNECT_BUDGET_S`` so a down sandbox surfaces fast
+    instead of hanging for the 150s per-engagement-boot default."""
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(
+        "decepticon.backends.http_sandbox.time.sleep", lambda d: sleep_calls.append(d)
+    )
+    monkeypatch.setenv("DECEPTICON_SANDBOX_CONNECT_BUDGET_S", "1")
+
+    def always_fail() -> None:
+        raise httpx.ConnectError("refused")
+
+    with pytest.raises(httpx.ConnectError):
+        _retry_on_connection_error(always_fail)
+    assert sum(sleep_calls) <= 1.0
+
+
+def test_retry_budget_env_override_invalid_falls_back_to_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-numeric or non-positive override is ignored (default budget)."""
+    from decepticon.backends.http_sandbox import (
+        _DEFAULT_CONNECT_RETRY_BUDGET_S,
+        _default_connect_retry_budget,
+    )
+
+    monkeypatch.setenv("DECEPTICON_SANDBOX_CONNECT_BUDGET_S", "not-a-number")
+    assert _default_connect_retry_budget() == _DEFAULT_CONNECT_RETRY_BUDGET_S
+    monkeypatch.setenv("DECEPTICON_SANDBOX_CONNECT_BUDGET_S", "0")
+    assert _default_connect_retry_budget() == _DEFAULT_CONNECT_RETRY_BUDGET_S
+
+
 def test_request_wraps_http_status_error_as_sandbox_error() -> None:
     sb = HTTPSandbox(base_url="http://localhost:9999")
     _inject_client(sb, _make_handler(500, None))

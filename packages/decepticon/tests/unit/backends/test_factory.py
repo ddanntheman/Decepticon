@@ -137,6 +137,34 @@ def test_resolve_endpoint_default_url_when_nothing_set(
     assert _resolve_endpoint() == ("http://localhost:9999", None)
 
 
+def test_resolve_endpoint_honors_legacy_saas_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The renamed ``SAAS_SANDBOX_URL`` / ``SAAS_SANDBOX_TOKEN`` still resolve
+    (with a deprecation warning) so the rename to ``SANDBOX_*`` doesn't silently
+    drop a configured endpoint back to the loopback default."""
+    monkeypatch.delenv("SANDBOX_URL", raising=False)
+    monkeypatch.delenv("SANDBOX_TOKEN", raising=False)
+    monkeypatch.setenv("SAAS_SANDBOX_URL", "http://legacy-sandbox:9999")
+    monkeypatch.setenv("SAAS_SANDBOX_TOKEN", "legacy-tok")
+    _patch_get_config(monkeypatch, None, raises=True)
+
+    assert _resolve_endpoint() == ("http://legacy-sandbox:9999", "legacy-tok")
+
+
+def test_resolve_endpoint_new_env_wins_over_legacy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When both the new and legacy names are set, the new name wins."""
+    monkeypatch.setenv("SANDBOX_URL", "http://new-sandbox:9999")
+    monkeypatch.setenv("SAAS_SANDBOX_URL", "http://legacy-sandbox:9999")
+    monkeypatch.delenv("SANDBOX_TOKEN", raising=False)
+    monkeypatch.delenv("SAAS_SANDBOX_TOKEN", raising=False)
+    _patch_get_config(monkeypatch, None, raises=True)
+
+    assert _resolve_endpoint() == ("http://new-sandbox:9999", None)
+
+
 def test_build_sandbox_backend_routes_per_run_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

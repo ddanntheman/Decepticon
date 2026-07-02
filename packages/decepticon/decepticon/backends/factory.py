@@ -24,12 +24,37 @@ boundary + the ``sandbox-net`` network.
 from __future__ import annotations
 
 import functools
+import logging
 import os
 from typing import Any
 
 from decepticon.backends.http_sandbox import HTTPSandbox
 
+log = logging.getLogger(__name__)
+
 _DEFAULT_SANDBOX_URL = "http://localhost:9999"
+
+
+def _env_with_legacy(name: str, legacy_name: str) -> str | None:
+    """Read ``name`` from the environment, falling back to a deprecated alias.
+
+    The sandbox endpoint vars were renamed ``SAAS_SANDBOX_*`` → ``SANDBOX_*``.
+    Deployments still setting the old name would otherwise silently resolve to
+    the loopback default; honor the legacy value (once) with a deprecation
+    warning so the rename is non-breaking.
+    """
+    value = os.environ.get(name)
+    if value:
+        return value
+    legacy = os.environ.get(legacy_name)
+    if legacy:
+        log.warning(
+            "%s is deprecated and will be removed; set %s instead.",
+            legacy_name,
+            name,
+        )
+        return legacy
+    return None
 
 
 # Sized for the multi-tenant case: a single SHARED langgraph process can serve
@@ -92,11 +117,13 @@ def _resolve_endpoint(config: Any = None) -> tuple[str, str | None]:
         except Exception:
             pass
 
-    # 3) Env fallback.
+    # 3) Env fallback. Accept the legacy ``SAAS_SANDBOX_*`` names (renamed to
+    #    ``SANDBOX_*``) so deployments still setting the old vars don't silently
+    #    fall back to the loopback default.
     if url is None:
-        url = os.environ.get("SANDBOX_URL", _DEFAULT_SANDBOX_URL)
+        url = _env_with_legacy("SANDBOX_URL", "SAAS_SANDBOX_URL") or _DEFAULT_SANDBOX_URL
     if token is None:
-        token = os.environ.get("SANDBOX_TOKEN") or None
+        token = _env_with_legacy("SANDBOX_TOKEN", "SAAS_SANDBOX_TOKEN")
     return url, token
 
 
