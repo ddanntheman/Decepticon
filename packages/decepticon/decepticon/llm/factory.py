@@ -973,6 +973,16 @@ def _model_is_deepseek_thinking(model: str) -> bool:
     return slug in ("deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner")
 
 
+def _model_is_moonshot_thinking(model: str) -> bool:
+    """Return True for Moonshot Kimi models.
+
+    Moonshot's kimi models (e.g. kimi-k2.6) use thinking/reasoning mode and
+    return ``reasoning_content`` in assistant messages.
+    """
+    slug = model.rsplit("/", 1)[-1].lower()
+    return slug.startswith("kimi-") or slug.startswith("moonshot-")
+
+
 def _model_is_nvidia_nim(model: str) -> bool:
     """Return True for any nvidia_nim/* route.
 
@@ -989,22 +999,10 @@ def _model_is_nvidia_nim(model: str) -> bool:
     return model.lower().startswith("nvidia_nim/")
 
 
-class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
-    """ChatOpenAI subclass that preserves DeepSeek ``reasoning_content``.
+class _ThinkingChatOpenAI(_ProxiedChatOpenAI):
+    """ChatOpenAI subclass that preserves ``reasoning_content`` in assistant messages.
 
-    DeepSeek V4 Pro's thinking mode returns ``reasoning_content`` alongside
-    ``content`` in assistant messages. When tool calls are present, this field
-    **must** be passed back in all subsequent API requests. LangChain's default
-    message converters silently drop it in both directions:
-
-    1. Response → AIMessage: ``reasoning_content`` is not extracted
-    2. AIMessage → request dict: ``reasoning_content`` is not serialized
-
-    This class patches both directions by:
-    - Storing ``reasoning_content`` in ``AIMessage.additional_kwargs``
-    - Injecting it back into request dicts for assistant messages
-    - Passing ``extra_body={"thinking": {"type": "enabled"}}`` and
-      ``reasoning_effort="high"`` on every request
+    Preserves reasoning_content in both directions (Response -> AIMessage and AIMessage -> request dict).
     """
 
     def _get_request_payload(
@@ -1017,15 +1015,8 @@ class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
         """Inject reasoning_content into outbound assistant messages."""
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
 
-        # Inject DeepSeek thinking mode params
-        extra_body = payload.get("extra_body") or {}
-        extra_body["thinking"] = {"type": "enabled"}
-        payload["extra_body"] = extra_body
-        payload["reasoning_effort"] = "high"
-
         # Walk the messages array and inject reasoning_content from
-        # additional_kwargs back into assistant message dicts so the
-        # DeepSeek API sees them.
+        # additional_kwargs back into assistant message dicts.
         for msg in payload.get("messages", []):
             if msg.get("role") != "assistant":
                 continue
@@ -1147,6 +1138,32 @@ class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
                 msg.additional_kwargs["reasoning_content"] = rc
 
         return result
+
+
+class _DeepSeekThinkingChatOpenAI(_ThinkingChatOpenAI):
+    """ChatOpenAI subclass that preserves DeepSeek ``reasoning_content`` and injects thinking params."""
+
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+
+        # Inject DeepSeek thinking mode params
+        extra_body = payload.get("extra_body") or {}
+        extra_body["thinking"] = {"type": "enabled"}
+        payload["extra_body"] = extra_body
+        payload["reasoning_effort"] = "high"
+
+        return payload
+
+
+class _MoonshotThinkingChatOpenAI(_ThinkingChatOpenAI):
+    """ChatOpenAI subclass that preserves Moonshot/Kimi ``reasoning_content``."""
+    pass
 
 
 class _NvidiaNIMChatOpenAI(_ProxiedChatOpenAI):
@@ -1651,10 +1668,15 @@ class LLMFactory:
         elif _model_is_deepseek_thinking(model):
             # DeepSeek V4 Pro thinking mode rejects temperature.
             kwargs["disabled_params"] = {"temperature": None}
+        elif _model_is_moonshot_thinking(model):
+            # Moonshot Kimi thinking mode rejects temperature (only 1 is allowed).
+            kwargs["disabled_params"] = {"temperature": None}
         else:
             kwargs["temperature"] = temperature
         if _model_is_deepseek_thinking(model):
             return _DeepSeekThinkingChatOpenAI(**kwargs)
+        elif _model_is_moonshot_thinking(model):
+            return _MoonshotThinkingChatOpenAI(**kwargs)
         if _model_is_nvidia_nim(model):
             return _NvidiaNIMChatOpenAI(**kwargs)
         return _ProxiedChatOpenAI(**kwargs)

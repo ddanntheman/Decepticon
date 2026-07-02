@@ -261,6 +261,34 @@ model_list:
       input_cost_per_token: 0.0000003
       output_cost_per_token: 0.0000012
 
+  # ── Moonshot / Kimi ──────────────────────────────────────────────────
+  # Native LiteLLM moonshot/ provider — registry-registered model IDs.
+  - model_name: moonshot/kimi-k2.6
+    litellm_params:
+      model: moonshot/kimi-k2.6
+      api_key: os.environ/MOONSHOT_API_KEY
+      additional_drop_params: ["temperature"]
+  - model_name: moonshot/kimi-k2.7-code
+    litellm_params:
+      model: moonshot/kimi-k2.7-code
+      api_key: os.environ/MOONSHOT_API_KEY
+      additional_drop_params: ["temperature"]
+  - model_name: moonshot/kimi-k2-instruct
+    litellm_params:
+      model: moonshot/kimi-k2-instruct
+      api_key: os.environ/MOONSHOT_API_KEY
+      additional_drop_params: ["temperature"]
+  - model_name: moonshot/moonshot-v1-8k
+    litellm_params:
+      model: moonshot/moonshot-v1-8k
+      api_key: os.environ/MOONSHOT_API_KEY
+      additional_drop_params: ["temperature"]
+  - model_name: moonshot/moonshot-v1-128k
+    litellm_params:
+      model: moonshot/moonshot-v1-128k
+      api_key: os.environ/MOONSHOT_API_KEY
+      additional_drop_params: ["temperature"]
+
   # ── Claude Code Auth (OAuth subscription) ────────────────────────────
   # ``additional_drop_params: ["temperature"]`` matches the api-key opus entry —
   # Opus 4.7 rejects the param on every route, OAuth path included.

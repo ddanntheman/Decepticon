@@ -1174,20 +1174,19 @@ class TestDeepSeekReasoningContent:
         assert "reasoning_content" not in payload["messages"][2]
 
     def test_model_detection(self):
-        """Factory routes DeepSeek V4 (pro + flash) and legacy reasoner.
-
-        Per DeepSeek's API docs ``deepseek-reasoner`` is the deprecated
-        alias for ``deepseek-v4-flash`` thinking mode, so v4-flash also
-        returns ``reasoning_content`` and the API rejects subsequent
-        tool turns when the field is omitted. Closes #201, #220.
-        """
-        from decepticon.llm.factory import _model_is_deepseek_thinking
+        """Factory routes DeepSeek V4 and Moonshot thinking models correctly."""
+        from decepticon.llm.factory import _model_is_deepseek_thinking, _model_is_moonshot_thinking
 
         assert _model_is_deepseek_thinking("deepseek/deepseek-v4-pro") is True
         assert _model_is_deepseek_thinking("deepseek/deepseek-v4-flash") is True
         assert _model_is_deepseek_thinking("deepseek/deepseek-reasoner") is True
         assert _model_is_deepseek_thinking("deepseek/deepseek-chat") is False
         assert _model_is_deepseek_thinking("openai/gpt-5.5") is False
+
+        assert _model_is_moonshot_thinking("moonshot/kimi-k2.6") is True
+        assert _model_is_moonshot_thinking("moonshot/moonshot-v1-8k") is True
+        assert _model_is_moonshot_thinking("moonshot/moonshot-v1-128k") is True
+        assert _model_is_moonshot_thinking("openai/gpt-5.5") is False
 
 
 # ── LLAMACPP_LOCAL credential detection (issue #151) ────────────────────
