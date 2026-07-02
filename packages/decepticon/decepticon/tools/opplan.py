@@ -121,10 +121,29 @@ def _live_sandbox_backend(fallback: BackendProtocol | None) -> BackendProtocol |
     ``config.configurable.sandbox_url`` since the per-run-sandbox fix). OPPLAN
     runs only in the TOP-LEVEL orchestrator, where langgraph seeds the
     ``get_config()`` contextvar that ``build_sandbox_backend()`` reads — so no
-    explicit config threading is needed here (unlike a sub-agent). Falls back to
-    the captured backend when there is no active run (unit tests) or if
-    resolution raises, so behaviour is unchanged off the hosted path.
+    explicit config threading is needed here (unlike a sub-agent).
+
+    Rebinding only happens when the active run actually carries a per-run
+    sandbox endpoint (``configurable.sandbox_url``) — that is the sole case the
+    build-time backend gets wrong. With no active run (unit tests / import time)
+    or a run that carries no per-run endpoint (single-tenant / dev), the
+    captured ``fallback`` already resolves the right endpoint, so it is returned
+    untouched and behaviour is unchanged off the hosted multi-tenant path.
     """
+    try:
+        from langgraph.config import get_config
+
+        configurable = (get_config() or {}).get("configurable") or {}
+    except Exception:
+        # No active runnable context (unit tests / import time).
+        return fallback
+
+    sandbox_url = configurable.get("sandbox_url")
+    if not (isinstance(sandbox_url, str) and sandbox_url):
+        # Active run, but no per-run sandbox endpoint (single-tenant / dev):
+        # the captured backend already points at the correct env endpoint.
+        return fallback
+
     try:
         from decepticon.backends import build_sandbox_backend, make_agent_backend
 
