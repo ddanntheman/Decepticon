@@ -41,8 +41,8 @@ decepticon-sdk = { workspace = true }
 # fork's ``bounty`` slate without forcing every contributor to remember
 # the env var.
 # OSS end-user installs that don't clone this repo fall back to the
-# hardcoded ``["standard"]`` default; SaaS Docker images override via
-# ``ENV DECEPTICON_PLUGINS=standard,saas``.
+# hardcoded ``["standard"]`` default; downstream Docker images override via
+# ``ENV DECEPTICON_PLUGINS=standard,vendor``.
 #
 # ``bounty`` is this fork's appsec / bug-bounty specialist slate. It is a
 # separate opt-in bundle (and deliberately kept out of langgraph.json /

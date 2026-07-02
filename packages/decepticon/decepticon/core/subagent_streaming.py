@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
+import os
 import time
 import uuid
 from typing import Any, Callable
@@ -41,6 +42,51 @@ from langchain_core.messages.tool import ToolCall
 from langchain_core.runnables import Runnable, RunnableBinding
 
 log = logging.getLogger("decepticon.subagent_streaming")
+
+# State key forwarded to the parent graph by deepagents' task()/atask() tool
+# (it is NOT in deepagents._EXCLUDED_STATE_KEYS), where the orchestrator's
+# SubagentTranscriptState reducer merges it into the checkpoint. This is what
+# makes the sub-agent transcript survive reconnect / completion, independent of
+# any attached SSE client.
+TRANSCRIPT_STATE_KEY = "subagent_transcripts"
+
+# Persisted-copy bound. The live ``writer`` event always carries the FULL
+# tool result; only the copy appended to the durable transcript is capped, so
+# the checkpoint doesn't grow without bound on a chatty tool (e.g. a 5MB curl
+# dump). Override with DECEPTICON_SUBAGENT_TRANSCRIPT_RESULT_CAP=0 to disable
+# truncation, or any positive int to change the cap.
+_DEFAULT_TRANSCRIPT_RESULT_CAP = 8000
+_TRANSCRIPT_TRUNCATION_MARKER = "…[truncated]"
+
+
+def _transcript_result_cap() -> int:
+    """Resolve the per-event tool-result char cap for the PERSISTED copy.
+
+    Read from the env on each call so tests / operators can flip it without a
+    process restart. 0 (or negative / unparseable) disables truncation.
+    """
+    raw = os.environ.get("DECEPTICON_SUBAGENT_TRANSCRIPT_RESULT_CAP")
+    if raw is None:
+        return _DEFAULT_TRANSCRIPT_RESULT_CAP
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_TRANSCRIPT_RESULT_CAP
+
+
+def _persisted_tool_result_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Return a transcript copy of a ``subagent_tool_result`` event with its
+    ``content`` capped. The live streamed ``event`` is left untouched (full).
+
+    Returns the SAME object when no truncation is needed so the common path
+    stays byte-identical to the streamed event.
+    """
+    cap = _transcript_result_cap()
+    content = event.get("content")
+    if cap <= 0 or not isinstance(content, str) or len(content) <= cap:
+        return event
+    return {**event, "content": content[:cap] + _TRANSCRIPT_TRUNCATION_MARKER}
+
 
 # Terminal guard: cap on consecutive sub-agent failures before we surface a
 # distinct marker the orchestrator can stop on. We can't re-raise from the
@@ -188,24 +234,29 @@ class StreamingRunnable(RunnableBinding):
         writer: Callable | None,
         prompt: str,
         session_id: str,
+        transcript: list[dict] | None = None,
     ) -> None:
         if has_renderer:
             renderer.on_subagent_start(self._name, prompt)
+        # Build the event once; emit the SAME object to the live stream and
+        # append it to the durable transcript, so the persisted payload is
+        # byte-identical to the streamed event.
+        event = {
+            "type": "subagent_start",
+            "agent": self._name,
+            "prompt": prompt,
+            # Invocation-unique id so consumers (CLI / Web) can
+            # group events by SESSION instead of by agent name.
+            # Two parallel ``task("recon", ...)`` dispatches yield
+            # the same ``agent`` but different ``session_id``s;
+            # without this field the CLI collapsed both into a
+            # single session and lost the first one's tool calls.
+            "session_id": session_id,
+        }
         if writer:
-            writer(
-                {
-                    "type": "subagent_start",
-                    "agent": self._name,
-                    "prompt": prompt,
-                    # Invocation-unique id so consumers (CLI / Web) can
-                    # group events by SESSION instead of by agent name.
-                    # Two parallel ``task("recon", ...)`` dispatches yield
-                    # the same ``agent`` but different ``session_id``s;
-                    # without this field the CLI collapsed both into a
-                    # single session and lost the first one's tool calls.
-                    "session_id": session_id,
-                }
-            )
+            writer(event)
+        if transcript is not None:
+            transcript.append(event)
 
     def _emit_end(
         self,
@@ -217,20 +268,22 @@ class StreamingRunnable(RunnableBinding):
         *,
         cancelled: bool = False,
         error: bool = False,
+        transcript: list[dict] | None = None,
     ) -> None:
         if has_renderer:
             renderer.on_subagent_end(self._name, elapsed, cancelled=cancelled, error=error)
+        event = {
+            "type": "subagent_end",
+            "agent": self._name,
+            "elapsed": elapsed,
+            "cancelled": cancelled,
+            "error": error,
+            "session_id": session_id,
+        }
         if writer:
-            writer(
-                {
-                    "type": "subagent_end",
-                    "agent": self._name,
-                    "elapsed": elapsed,
-                    "cancelled": cancelled,
-                    "error": error,
-                    "session_id": session_id,
-                }
-            )
+            writer(event)
+        if transcript is not None:
+            transcript.append(event)
 
     def _process_messages(
         self,
@@ -240,8 +293,16 @@ class StreamingRunnable(RunnableBinding):
         has_renderer: bool,
         writer: Callable | None,
         session_id: str,
+        transcript: list[dict] | None = None,
     ) -> None:
-        """Process new messages and emit events to channels."""
+        """Process new messages and emit events to channels.
+
+        When ``transcript`` is provided, every event emitted to ``writer`` is
+        ALSO appended to it (the same dict object, so the persisted payload is
+        byte-identical to the streamed event) — except ``subagent_tool_result``
+        whose persisted ``content`` is capped (see ``_persisted_tool_result_event``)
+        to bound checkpoint size. The live event stays full.
+        """
         from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
         for msg in new_messages:
@@ -260,15 +321,16 @@ class StreamingRunnable(RunnableBinding):
                     if text:
                         if has_renderer:
                             renderer.on_subagent_message(self._name, text)
+                        event = {
+                            "type": "subagent_message",
+                            "agent": self._name,
+                            "text": text,
+                            "session_id": session_id,
+                        }
                         if writer:
-                            writer(
-                                {
-                                    "type": "subagent_message",
-                                    "agent": self._name,
-                                    "text": text,
-                                    "session_id": session_id,
-                                }
-                            )
+                            writer(event)
+                        if transcript is not None:
+                            transcript.append(event)
 
                 if hasattr(msg, "tool_calls") and msg.tool_calls:
                     for tc in msg.tool_calls:
@@ -293,24 +355,25 @@ class StreamingRunnable(RunnableBinding):
                         }
                         if has_renderer:
                             renderer.on_subagent_tool_call(self._name, tc["name"], tc["args"])
+                        event = {
+                            "type": "subagent_tool_call",
+                            "agent": self._name,
+                            "tool": tc["name"],
+                            "args": tc_args,
+                            # LangChain ToolCall id — exposed to
+                            # consumers (CLI / Web) so they can pair
+                            # this event with the matching
+                            # subagent_tool_result emission instead of
+                            # falling back to positional FIFO by
+                            # tool name. None when the model omitted
+                            # the id (rare; logged as a warning above).
+                            "id": tc_id,
+                            "session_id": session_id,
+                        }
                         if writer:
-                            writer(
-                                {
-                                    "type": "subagent_tool_call",
-                                    "agent": self._name,
-                                    "tool": tc["name"],
-                                    "args": tc_args,
-                                    # LangChain ToolCall id — exposed to
-                                    # consumers (CLI / Web) so they can pair
-                                    # this event with the matching
-                                    # subagent_tool_result emission instead of
-                                    # falling back to positional FIFO by
-                                    # tool name. None when the model omitted
-                                    # the id (rare; logged as a warning above).
-                                    "id": tc_id,
-                                    "session_id": session_id,
-                                }
-                            )
+                            writer(event)
+                        if transcript is not None:
+                            transcript.append(event)
 
             elif isinstance(msg, ToolMessage):
                 tc = active_tool_calls.get(msg.tool_call_id)
@@ -324,23 +387,26 @@ class StreamingRunnable(RunnableBinding):
                 }
                 if has_renderer:
                     renderer.on_subagent_tool_result(self._name, tool_name, tool_args, content)
+                event = {
+                    "type": "subagent_tool_result",
+                    "agent": self._name,
+                    "tool": tool_name,
+                    "args": tc_args,
+                    "content": content,
+                    "status": status,
+                    # Same id as the matching subagent_tool_call —
+                    # lets consumers pair the result back to its
+                    # originating call exactly, no per-tool-name
+                    # FIFO heuristic required.
+                    "id": msg.tool_call_id,
+                    "session_id": session_id,
+                }
                 if writer:
-                    writer(
-                        {
-                            "type": "subagent_tool_result",
-                            "agent": self._name,
-                            "tool": tool_name,
-                            "args": tc_args,
-                            "content": content,
-                            "status": status,
-                            # Same id as the matching subagent_tool_call —
-                            # lets consumers pair the result back to its
-                            # originating call exactly, no per-tool-name
-                            # FIFO heuristic required.
-                            "id": msg.tool_call_id,
-                            "session_id": session_id,
-                        }
-                    )
+                    # Live stream gets the FULL result.
+                    writer(event)
+                if transcript is not None:
+                    # Persisted copy is capped to bound checkpoint size.
+                    transcript.append(_persisted_tool_result_event(event))
 
     def invoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
         """Stream sub-agent execution (sync), emitting events to available channels."""
@@ -362,7 +428,10 @@ class StreamingRunnable(RunnableBinding):
         # ``task("recon", ...)`` dispatches by SESSION even though the
         # ``agent`` field is identical.
         session_id = uuid.uuid4().hex[:12]
-        self._emit_start(renderer, has_renderer, writer, prompt, session_id)
+        # Durable transcript: mirrors every streamed event so it survives in
+        # the parent checkpoint (deepagents forwards this state key upward).
+        transcript: list[dict] = []
+        self._emit_start(renderer, has_renderer, writer, prompt, session_id, transcript)
 
         start = time.monotonic()
         last_state = None
@@ -378,19 +447,37 @@ class StreamingRunnable(RunnableBinding):
                 new_messages = messages[last_count:]
                 last_count = len(messages)
                 self._process_messages(
-                    new_messages, active_tool_calls, renderer, has_renderer, writer, session_id
+                    new_messages,
+                    active_tool_calls,
+                    renderer,
+                    has_renderer,
+                    writer,
+                    session_id,
+                    transcript,
                 )
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             log.info("[%s] invoke() cancelled", self._name)
             self._emit_end(
-                renderer, has_renderer, writer, time.monotonic() - start, session_id, cancelled=True
+                renderer,
+                has_renderer,
+                writer,
+                time.monotonic() - start,
+                session_id,
+                cancelled=True,
+                transcript=transcript,
             )
             raise
         except Exception as exc:
             log.error("[%s] invoke() failed: %s: %s", self._name, type(exc).__name__, exc)
             self._emit_end(
-                renderer, has_renderer, writer, time.monotonic() - start, session_id, error=True
+                renderer,
+                has_renderer,
+                writer,
+                time.monotonic() - start,
+                session_id,
+                error=True,
+                transcript=transcript,
             )
             # Return error state instead of re-raising. Re-raising crashes the
             # ToolNode step, which prevents ToolMessages from being saved to the
@@ -400,10 +487,17 @@ class StreamingRunnable(RunnableBinding):
             error_msg = self._bump_failure_and_format(exc)
             if last_state is not None:
                 last_state.setdefault("messages", []).append(AIMessage(content=error_msg))
-                return last_state
-            return {"messages": [AIMessage(content=error_msg)]}
+                return {**last_state, TRANSCRIPT_STATE_KEY: transcript}
+            return {"messages": [AIMessage(content=error_msg)], TRANSCRIPT_STATE_KEY: transcript}
 
-        self._emit_end(renderer, has_renderer, writer, time.monotonic() - start, session_id)
+        self._emit_end(
+            renderer,
+            has_renderer,
+            writer,
+            time.monotonic() - start,
+            session_id,
+            transcript=transcript,
+        )
         self._reset_failures()
 
         if last_state is None:
@@ -423,10 +517,11 @@ class StreamingRunnable(RunnableBinding):
                             "avoid duplicate tool side effects."
                         )
                     )
-                ]
+                ],
+                TRANSCRIPT_STATE_KEY: transcript,
             }
 
-        return last_state
+        return {**last_state, TRANSCRIPT_STATE_KEY: transcript}
 
     async def ainvoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
         """Stream sub-agent execution (async), emitting events to available channels.
@@ -452,7 +547,10 @@ class StreamingRunnable(RunnableBinding):
         # Per-invocation id so consumers can distinguish two concurrent
         # ``task("recon", ...)`` dispatches by SESSION (see invoke() above).
         session_id = uuid.uuid4().hex[:12]
-        self._emit_start(renderer, has_renderer, writer, prompt, session_id)
+        # Durable transcript: mirrors every streamed event so it survives in
+        # the parent checkpoint (deepagents forwards this state key upward).
+        transcript: list[dict] = []
+        self._emit_start(renderer, has_renderer, writer, prompt, session_id, transcript)
 
         start = time.monotonic()
         last_state = None
@@ -475,19 +573,37 @@ class StreamingRunnable(RunnableBinding):
                         len(messages),
                     )
                 self._process_messages(
-                    new_messages, active_tool_calls, renderer, has_renderer, writer, session_id
+                    new_messages,
+                    active_tool_calls,
+                    renderer,
+                    has_renderer,
+                    writer,
+                    session_id,
+                    transcript,
                 )
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             log.info("[%s] ainvoke() cancelled", self._name)
             self._emit_end(
-                renderer, has_renderer, writer, time.monotonic() - start, session_id, cancelled=True
+                renderer,
+                has_renderer,
+                writer,
+                time.monotonic() - start,
+                session_id,
+                cancelled=True,
+                transcript=transcript,
             )
             raise
         except Exception as exc:
             log.error("[%s] ainvoke() failed: %s: %s", self._name, type(exc).__name__, exc)
             self._emit_end(
-                renderer, has_renderer, writer, time.monotonic() - start, session_id, error=True
+                renderer,
+                has_renderer,
+                writer,
+                time.monotonic() - start,
+                session_id,
+                error=True,
+                transcript=transcript,
             )
             # Return error state instead of re-raising. Re-raising crashes the
             # ToolNode step, which prevents ToolMessages from being saved to the
@@ -497,10 +613,17 @@ class StreamingRunnable(RunnableBinding):
             error_msg = self._bump_failure_and_format(exc)
             if last_state is not None:
                 last_state.setdefault("messages", []).append(AIMessage(content=error_msg))
-                return last_state
-            return {"messages": [AIMessage(content=error_msg)]}
+                return {**last_state, TRANSCRIPT_STATE_KEY: transcript}
+            return {"messages": [AIMessage(content=error_msg)], TRANSCRIPT_STATE_KEY: transcript}
 
-        self._emit_end(renderer, has_renderer, writer, time.monotonic() - start, session_id)
+        self._emit_end(
+            renderer,
+            has_renderer,
+            writer,
+            time.monotonic() - start,
+            session_id,
+            transcript=transcript,
+        )
         self._reset_failures()
 
         if last_state is None:
@@ -518,7 +641,8 @@ class StreamingRunnable(RunnableBinding):
                             "avoid duplicate tool side effects."
                         )
                     )
-                ]
+                ],
+                TRANSCRIPT_STATE_KEY: transcript,
             }
 
-        return last_state
+        return {**last_state, TRANSCRIPT_STATE_KEY: transcript}

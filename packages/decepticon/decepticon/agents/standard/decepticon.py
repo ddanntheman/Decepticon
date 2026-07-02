@@ -142,7 +142,7 @@ def create_decepticon_agent(
     # itself as a ``SUBAGENT_SPEC`` module constant registered under the
     # ``decepticon.subagents`` entry-point group; this main agent picks
     # up every spec whose ``parent_agents`` includes ``"decepticon"``.
-    # SaaS or community plugin packages can extend this roster without
+    # Community or downstream plugin packages can extend this roster without
     # modifying OSS — see ``decepticon/plugin_loader.py`` for the loader
     # contract and ``pyproject.toml`` for the registered specs.
     #
@@ -165,27 +165,35 @@ def create_decepticon_agent(
         # The orchestrator carries two tool categories directly:
         #
         # 1. ADR-0006 ``ops_*``: only the orchestrator may bring
-        #    specialist workloads up or down (least-privilege §2).
+        #    specialist workloads up or down (least-privilege §2, so a
+        #    compromised sub-agent cannot spin up unrelated infrastructure).
+        #    Registered ONLY when the opscontrol daemon socket is present
+        #    (``decepticon start`` topology). Daemon-less topologies —
+        #    ``make dev`` / ``make smoke``, and hosted deployments that manage
+        #    workload teardown externally — have no socket, so offering these
+        #    tools would only return ``opscontrol_unreachable``. Gating keeps
+        #    the toolset honest per topology instead of relying on the model
+        #    to avoid an unusable tool.
         # 2. Engagement-level intelligence & coordination tools:
         #    cross-session memory (recall/store), OSINT feeds (KEV/GHSA),
         #    vaccine loop, consensus validation, structured export, CART,
-        #    and finding-ID allocation for parallel dispatch.
-        from decepticon.tools.ops import OPS_TOOLS
+        #    and finding-ID allocation for parallel dispatch. These carry no
+        #    daemon dependency, so they are always registered.
+        from decepticon.tools.ops import OPS_TOOLS, ops_available
 
+        orchestrator_tools = [
+            *ENGAGEMENT_INTEL_TOOLS,
+            *VACCINE_TOOLS,
+            *CONSENSUS_TOOLS,
+            *STRUCTURED_FINDING_TOOLS,
+            *CART_TOOLS,
+            allocate_finding_id,
+        ]
+        if ops_available():
+            orchestrator_tools = [*OPS_TOOLS, *orchestrator_tools]
         tools = build_tools(
             role=_ROLE,
-            standard_tools={
-                t.name: t
-                for t in [
-                    *OPS_TOOLS,
-                    *ENGAGEMENT_INTEL_TOOLS,
-                    *VACCINE_TOOLS,
-                    *CONSENSUS_TOOLS,
-                    *STRUCTURED_FINDING_TOOLS,
-                    *CART_TOOLS,
-                    allocate_finding_id,
-                ]
-            },
+            standard_tools={t.name: t for t in orchestrator_tools},
         )
     if middleware is None:
         middleware = build_middleware(
