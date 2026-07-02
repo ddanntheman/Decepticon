@@ -53,14 +53,17 @@ from decepticon.tools.web.search import web_fetch, web_search
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
 _STANDARD_TOOLS: dict[str, Any] = {
-    t.name: t
-    for t in [web_search, web_fetch, *REPORTING_TOOLS, *REFERENCES_TOOLS, *BASH_TOOLS]
+    t.name: t for t in [web_search, web_fetch, *REPORTING_TOOLS, *REFERENCES_TOOLS, *BASH_TOOLS]
 }
 
 
 _ROLE = "asvs_assessor"
 _RECURSION_LIMIT = 1000
-_SKILL_SOURCES: list[str] = ["/skills/standard/analyst/", "/skills/standard/recon/", "/skills/shared/"]
+_SKILL_SOURCES: list[str] = [
+    "/skills/standard/analyst/",
+    "/skills/standard/recon/",
+    "/skills/shared/",
+]
 
 
 def create_asvs_assessor_agent(

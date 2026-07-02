@@ -312,6 +312,7 @@ def _is_placeholder_value(value: str) -> bool:
         return True
     return False
 
+
 # Minimum length for any value that should be treated as a real key. All
 # vendor-issued keys exceed this — Anthropic ``sk-ant-api03-…`` ≈ 100 chars,
 # OpenAI ``sk-…`` ≥ 48 chars, Google ``AIza…`` 39 chars. 24 leaves headroom
@@ -1189,6 +1190,7 @@ class _DeepSeekThinkingChatOpenAI(_ThinkingChatOpenAI):
 
 class _MoonshotThinkingChatOpenAI(_ThinkingChatOpenAI):
     """ChatOpenAI subclass that preserves Moonshot/Kimi ``reasoning_content``."""
+
     pass
 
 
