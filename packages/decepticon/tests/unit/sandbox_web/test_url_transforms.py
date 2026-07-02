@@ -46,6 +46,12 @@ def test_drop_www() -> None:
     assert apply_transform("drop_www", "https://example.com/a") is None
 
 
+def test_drop_www_preserves_port() -> None:
+    assert apply_transform("drop_www", "https://www.example.com:8443/a") == (
+        "https://example.com:8443/a"
+    )
+
+
 def test_unknown_transform_raises() -> None:
     with pytest.raises(ValueError, match="Unknown transform"):
         apply_transform("warp_drive", "https://example.com")

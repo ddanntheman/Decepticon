@@ -50,6 +50,7 @@ import asyncio
 import base64
 import hashlib
 import logging
+import os
 import re
 import time
 from typing import TYPE_CHECKING
@@ -108,26 +109,87 @@ class SandboxError(RuntimeError):
     pass
 
 
-def _retry_on_connection_error(fn, max_retries=3, base_delay=0.5):
-    """Retry a function on httpx connection errors with exponential backoff."""
+_DEFAULT_CONNECT_RETRY_BUDGET_S = 150.0
+
+
+def _default_connect_retry_budget() -> float:
+    """Resolve the connection-retry budget (seconds), env-overridable.
+
+    Defaults to ``150`` — a per-engagement sandbox can take 1-2 minutes to
+    become reachable (VM provision → COS boot → image pull → daemon listen), so
+    the hosted multi-tenant path needs a long budget to ride out that boot.
+    Single-tenant / dev deployments, where the sandbox is either already up or
+    genuinely down, can shrink this via ``DECEPTICON_SANDBOX_CONNECT_BUDGET_S``
+    (e.g. ``8``) so a down sandbox surfaces in seconds instead of ~2.5 minutes.
+    An unset / non-numeric / non-positive value falls back to the default.
+    """
+    raw = os.environ.get("DECEPTICON_SANDBOX_CONNECT_BUDGET_S")
+    if raw is None:
+        return _DEFAULT_CONNECT_RETRY_BUDGET_S
+    try:
+        parsed = float(raw)
+    except ValueError:
+        log.warning(
+            "Ignoring non-numeric DECEPTICON_SANDBOX_CONNECT_BUDGET_S=%r; using %.0fs",
+            raw,
+            _DEFAULT_CONNECT_RETRY_BUDGET_S,
+        )
+        return _DEFAULT_CONNECT_RETRY_BUDGET_S
+    if parsed <= 0:
+        return _DEFAULT_CONNECT_RETRY_BUDGET_S
+    return parsed
+
+
+def _retry_on_connection_error(fn, max_total_delay=None, base_delay=0.5, max_delay=8.0):
+    """Retry a function on httpx connection errors with capped exponential backoff.
+
+    Only ``ConnectError`` / ``ConnectTimeout`` are retried — both mean the TCP
+    connection was never established, so the request never reached the daemon
+    and re-sending it is side-effect-free (unlike a ``ReadTimeout``, where the
+    command may already be running). That safety is what lets us retry even
+    ``execute`` (bash) here.
+
+    The retry budget is time-based (``max_total_delay`` seconds of cumulative
+    sleep) rather than a fixed attempt count, because a per-engagement sandbox
+    can take 1-2 minutes to become reachable: VM provision -> COS boot ->
+    sandbox image pull -> container start before the daemon listens on :9999.
+    During that window connections are refused; retrying for ~``max_total_delay``
+    lets the agent's first tool call ride out the boot instead of failing the
+    run. A genuinely dead/unroutable sandbox still surfaces the error within
+    roughly ``max_total_delay`` (delays are capped at ``max_delay`` so the loop
+    keeps probing rather than backing off unboundedly).
+
+    ``max_total_delay`` defaults to ``DECEPTICON_SANDBOX_CONNECT_BUDGET_S`` (or
+    150s — see ``_default_connect_retry_budget``); single-tenant / dev
+    deployments can lower it so a down sandbox fails fast instead of hanging.
+    """
+    if max_total_delay is None:
+        max_total_delay = _default_connect_retry_budget()
     last_exc = None
-    for attempt in range(max_retries):
+    slept = 0.0
+    attempt = 0
+    while True:
         try:
             return fn()
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             last_exc = exc
-            if attempt < max_retries - 1:
-                delay = base_delay * (2**attempt)
-                log.warning(
-                    "Sandbox connection failed (attempt %d/%d), retrying in %.1fs: %s",
-                    attempt + 1,
-                    max_retries,
-                    delay,
-                    exc,
-                )
-                time.sleep(delay)
-    if last_exc is None:  # max_retries <= 0 — never attempted
-        raise SandboxError("retry loop made no attempts (max_retries <= 0)")
+            delay = min(base_delay * (2**attempt), max_delay)
+            if slept + delay > max_total_delay:
+                break
+            log.warning(
+                "Sandbox connection failed (attempt %d, %.1fs/%.0fs elapsed), "
+                "retrying in %.1fs: %s",
+                attempt + 1,
+                slept,
+                max_total_delay,
+                delay,
+                exc,
+            )
+            time.sleep(delay)
+            slept += delay
+            attempt += 1
+    if last_exc is None:  # max_total_delay <= 0 — never able to retry
+        raise SandboxError("retry loop made no attempts (max_total_delay <= 0)")
     raise last_exc
 
 

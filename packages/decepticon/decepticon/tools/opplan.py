@@ -103,6 +103,56 @@ def _build_opplan_payload(opplan: OPPLAN) -> dict[str, Any]:
     }
 
 
+def _live_sandbox_backend(fallback: BackendProtocol | None) -> BackendProtocol | None:
+    """Resolve the CURRENT run's sandbox backend, not the graph-build-time one.
+
+    The backend captured when the graph is compiled (``OPPLANMiddleware(backend=)``)
+    resolves its sandbox endpoint from the ``SANDBOX_URL`` env var, because there
+    is no run config at construction time. In a SHARED multi-tenant langgraph that
+    env points at the process-local sidecar, NOT the run's OWN per-engagement
+    sandbox (per-run VM / silo). So OPPLAN persistence wrote ``opplan.json`` to the
+    sidecar's shared workspace (bucket ROOT, unprefixed) while every OTHER doc —
+    written through FilesystemMiddleware, which rebinds per run — landed in the
+    engagement's tenant bucket. ``read_file`` then resolved against the tenant
+    prefix and could never see the OPPLAN.
+
+    Re-resolve per call from the ambient run config, mirroring
+    ``FilesystemMiddleware`` (``build_sandbox_backend`` reads
+    ``config.configurable.sandbox_url`` since the per-run-sandbox fix). OPPLAN
+    runs only in the TOP-LEVEL orchestrator, where langgraph seeds the
+    ``get_config()`` contextvar that ``build_sandbox_backend()`` reads — so no
+    explicit config threading is needed here (unlike a sub-agent).
+
+    Rebinding only happens when the active run actually carries a per-run
+    sandbox endpoint (``configurable.sandbox_url``) — that is the sole case the
+    build-time backend gets wrong. With no active run (unit tests / import time)
+    or a run that carries no per-run endpoint (single-tenant / dev), the
+    captured ``fallback`` already resolves the right endpoint, so it is returned
+    untouched and behaviour is unchanged off the hosted multi-tenant path.
+    """
+    try:
+        from langgraph.config import get_config
+
+        configurable = (get_config() or {}).get("configurable") or {}
+    except Exception:
+        # No active runnable context (unit tests / import time).
+        return fallback
+
+    sandbox_url = configurable.get("sandbox_url")
+    if not (isinstance(sandbox_url, str) and sandbox_url):
+        # Active run, but no per-run sandbox endpoint (single-tenant / dev):
+        # the captured backend already points at the correct env endpoint.
+        return fallback
+
+    try:
+        from decepticon.backends import build_sandbox_backend, make_agent_backend
+
+        return make_agent_backend(build_sandbox_backend())
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug("OPPLAN live backend resolution failed, using build-time backend: %s", exc)
+        return fallback
+
+
 def _scoped_opplan_backend(
     backend: BackendProtocol | None,
     workspace_path: str | None,
@@ -113,11 +163,18 @@ def _scoped_opplan_backend(
     if not workspace_path:
         return None
 
+    # Rebind to the run's OWN sandbox before scoping — the captured ``backend``
+    # points at the build-time env sidecar in a shared langgraph (see
+    # ``_live_sandbox_backend``), which routed OPPLAN writes to the wrong bucket.
+    live = _live_sandbox_backend(backend)
+    if live is None:
+        return None
+
     # Local import avoids a module cycle: filesystem.py imports the OPPLAN
     # reducers for its state schema.
     from decepticon.middleware.filesystem import EngagementFilesystemBackend
 
-    return EngagementFilesystemBackend(backend, workspace_path)
+    return EngagementFilesystemBackend(live, workspace_path)
 
 
 def _read_text_from_backend(
@@ -389,6 +446,16 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
 
         objectives = list(state.get("objectives", []))
         objectives.append(obj_dict)
+
+        # Ground-truth telemetry: which kill-chain phase the engagement is
+        # working — no objective text/target. No-op unless telemetry is on.
+        try:
+            from decepticon.telemetry.sink import get_sink, session_id_for
+
+            sid = session_id_for(engagement_name or state.get("engagement_name", ""))
+            get_sink().record_phase(getattr(phase, "value", str(phase)), "pending", session_id=sid)
+        except Exception:  # noqa: BLE001 — telemetry must never break the tool
+            pass
 
         # Build state update — always include objectives + counter
         update: dict[str, Any] = {

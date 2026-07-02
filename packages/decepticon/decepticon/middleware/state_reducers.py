@@ -39,3 +39,12 @@ def reduce_converging_value(current: _T | None, update: _T | None) -> _T | None:
     ``None``, in which case the prior value is preserved.
     """
     return update if update is not None else current
+
+
+def reduce_concat_transcript(current, update):
+    """Order-stable concat for an accumulating list channel written by one or
+    more concurrent graph branches (parallel task() dispatch). Append-only;
+    idempotent on None. Each entry is an opaque event dict."""
+    if not update:
+        return current or []
+    return (current or []) + list(update)

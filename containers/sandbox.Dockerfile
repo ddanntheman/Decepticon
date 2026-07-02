@@ -113,25 +113,45 @@ RUN pip3 install --break-system-packages --no-cache-dir \
     "uvicorn>=0.30.0" \
     "deepagents>=0.5.0"
 
-# ── Open-web acquisition engine (ADR-0010) ───────────────────────────
+# ── Open-web acquisition engine (insane-search port, ADR-0010) ───────
 # decepticon/sandbox_web runs HERE, inside the sandbox, so all open-web
-# egress stays in sandbox-net behind the nftables allowlist. Its deps:
-#   * curl_cffi    — TLS-impersonation fetch tier
+# egress stays in sandbox-net behind the nftables allowlist. Python deps:
+#   * curl_cffi>=0.15 — TLS-impersonation fetch tier. 0.15 is REQUIRED by the
+#                    engine: it ships the current Chrome (146+) JA3/JA4
+#                    fingerprint, HTTP/3, and SSRF-safe redirect defaults; older
+#                    pins are fingerprinted as stale and blocked.
 #   * beautifulsoup4 — success-selector proof + DDG result parsing
 #   * pyyaml       — WAF profile loading
-#   * pydantic*    — required by decepticon-core (copied below) so the
-#                    engine's per-hop RoE scope_check (evaluate_target on
-#                    <workspace>/plan/roe.json) is live, not just nftables.
-# The optional Playwright browser tier is NOT installed by default (the
-# engine degrades to UNKNOWN on JS-challenge fallback); enable it in a
-# follow-up build arg if needed.
+#   * yt-dlp       — Phase 0 media route (YouTube/Vimeo/… --dump-json)
+#   * pydantic*    — decepticon-core dep so the per-hop RoE scope_check
+#                    (evaluate_target on <workspace>/plan/roe.json) is live.
 RUN pip3 install --break-system-packages --no-cache-dir \
-    "curl_cffi>=0.7.0" \
+    "curl_cffi>=0.15.0" \
     "beautifulsoup4>=4.12.0" \
     "pyyaml>=6.0.0" \
+    "yt-dlp>=2025.1.1" \
     "pydantic>=2.0.0" \
     "pydantic-settings>=2.0.0" \
     "typing-extensions>=4.0.0"
+
+# Playwright browser tier — the engine's last escalation rung for JS/WAF
+# challenges (Cloudflare Turnstile, Akamai, DataDome) that the curl_cffi grid
+# can't clear. The node templates in `decepticon/sandbox_web/templates/` launch
+# Chromium with the puppeteer-extra stealth stack; their npm deps are installed
+# LOCALLY in that dir AFTER the package is COPYed in (see below) — a global
+# install does not resolve the stealth plugin's nested evasion deps. node/npm
+# are already installed above.
+#
+# Browser binary: use Kali's system Chromium. `playwright install --with-deps`
+# is NOT used — its hardcoded Debian font/xvfb apt list (fonts-liberation,
+# xvfb, …) does not exist in the Kali repos and fails the build. apt installs
+# Chromium WITH its runtime libs resolved by the distro; the templates launch it
+# via executablePath (INSANE_CHROMIUM_PATH). Headless by default (no X server);
+# INSANE_HEADLESS=0 + xvfb is the headful path for headless-detecting WAFs.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium \
+    && rm -rf /var/lib/apt/lists/*
+ENV INSANE_CHROMIUM_PATH=/usr/bin/chromium
 
 # ── Reverse Engineering: Ghidra 12.1 + radare2 + binwalk (opt-in) ──
 #
@@ -209,6 +229,15 @@ COPY packages/decepticon/decepticon/sandbox_server /opt/decepticon/sandbox_serve
 COPY packages/decepticon/decepticon/sandbox_web /opt/decepticon/sandbox_web
 COPY packages/decepticon-core/decepticon_core /opt/decepticon_core
 ENV PYTHONPATH=/opt
+
+# Install the Playwright templates' node deps LOCALLY (in their own dir) so the
+# stealth plugin's full nested evasion tree (incl. user-preferences) resolves —
+# a global install + NODE_PATH does not. The executor shells `node` here, so node
+# resolves require() from templates/node_modules. Done after the COPY because the
+# templates' package.json ships inside sandbox_web.
+RUN cd /opt/decepticon/sandbox_web/templates \
+    && npm install --no-fund --no-audit --omit=optional \
+    && npm cache clean --force
 
 # Skip the framework boot path on this image — the sandbox container
 # ships only sandbox_kernel + sandbox_server, NOT decepticon-core or

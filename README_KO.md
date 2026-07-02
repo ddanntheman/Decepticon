@@ -32,6 +32,9 @@
 <a href="https://docs.decepticon.red">
   <img src="https://img.shields.io/badge/문서-docs.decepticon.red-8B5CF6?logo=bookstack&logoColor=white&style=for-the-badge" alt="Docs">
 </a>
+<a href="https://app.decepticon.red">
+  <img src="https://img.shields.io/badge/라이브%20앱-app.decepticon.red-FF2D55?logo=rocket&logoColor=white&style=for-the-badge" alt="라이브 호스팅 앱">
+</a>
 
 </div>
 
@@ -39,6 +42,18 @@
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/b3fd40d8-e859-4a39-97f4-bd825694ad96" width="800" controls></video>
+</div>
+
+<div align="center">
+
+### ☁️ 직접 설치하기 번거롭다면? **Decepticon이 클라우드에서 라이브로 돌아갑니다.**
+
+Docker 설치 없이 — 브라우저에서 바로 자율 레드팀 엔게이지먼트를 실행하세요.
+
+<a href="https://app.decepticon.red">
+  <img src="https://img.shields.io/badge/라이브%20앱%20실행하기-app.decepticon.red-FF2D55?logo=rocket&logoColor=white&style=for-the-badge" alt="app.decepticon.red 라이브 앱 실행">
+</a>
+
 </div>
 
 ---
@@ -57,14 +72,14 @@ decepticon           # 전체 실행: 터미널 CLI + 웹 대시보드 (http://l
 
 ### 라이브러리로 사용 (pip)
 
-에이전트 위에 무언가를 만드시나요 — SaaS, 연구 통합, 커스텀 오케스트레이터? SDK 를 PyPI 에서 설치하세요:
+에이전트 위에 무언가를 만드시나요 — 제품, 연구 통합, 커스텀 오케스트레이터? SDK 를 PyPI 에서 설치하세요:
 
 ```bash
 pip install decepticon              # 코어 SDK
 pip install "decepticon[neo4j]"     # + 지식그래프 공격체인 도구
 ```
 
-`decepticon` 은 **클라이언트 SDK** 입니다 — 에이전트 팩토리·미들웨어·도구·스킬을 담고 있고, LLM 호출과 샌드박스 실행은 런타임 서비스로 HTTP 라우팅합니다 (`DECEPTICON_LLM__PROXY_URL`, `SAAS_SANDBOX_URL`). 에이전트를 실제로 돌리려면 그 서비스들이 필요합니다 — 위 Docker 스택을 쓰거나 URL 을 직접 가리키세요. 팩토리 오버라이드 surface, 선언적 `PluginBundle` 플러그인, 안전 게이트는 **[라이브러리로서의 Decepticon](docs/library-usage.md)** 참고.
+`decepticon` 은 **클라이언트 SDK** 입니다 — 에이전트 팩토리·미들웨어·도구·스킬을 담고 있고, LLM 호출과 샌드박스 실행은 런타임 서비스로 HTTP 라우팅합니다 (`DECEPTICON_LLM__PROXY_URL`, `SANDBOX_URL`). 에이전트를 실제로 돌리려면 그 서비스들이 필요합니다 — 위 Docker 스택을 쓰거나 URL 을 직접 가리키세요. 팩토리 오버라이드 surface, 선언적 `PluginBundle` 플러그인, 안전 게이트는 **[라이브러리로서의 Decepticon](docs/library-usage.md)** 참고.
 
 ---
 

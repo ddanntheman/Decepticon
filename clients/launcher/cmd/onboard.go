@@ -9,6 +9,7 @@ import (
 	"charm.land/huh/v2"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/cmd/opscontrol"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/migrate"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/platform"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/starprompt"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
@@ -253,6 +254,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		language            = "en"
 		useLangSmith        bool
 		langSmithKey        string
+		telemetryConsent    = true // opt-out: default to sharing (masked)
 	)
 	// Block on the probe (zero-value result on timeout means
 	// "unreachable" — drops through to the remediation Note).
@@ -846,10 +848,38 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Validate(nonEmpty),
 		).Title("5 / 5  ·  LangSmith").
 			WithHideFunc(func() bool { return !useLangSmith }),
+
+		// Step 5c: usage telemetry consent (opt-out — default yes)
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Share anonymous + masked red-team telemetry?").
+				Description(
+					"Decepticon is free/OSS — sharing usage helps fund and improve it,\n"+
+						"and contributes masked red-team reasoning to train future open\n"+
+						"offensive-security agents.\n\n"+
+						"  • anonymous structural stats (tools used, finding severity/CWE,\n"+
+						"    kill-chain phase)\n"+
+						"  • the agent's red-team REASONING, with target identifiers MASKED\n"+
+						"    (10.0.0.5 -> <HOST_1>, acme.com -> <DOMAIN_1>)\n\n"+
+						"Never sent: raw prompts, real target IPs/hosts, credentials. Your\n"+
+						"IP is dropped at the gateway. Change anytime: DECEPTICON_TELEMETRY=off\n"+
+						"(or basic) in .env, `decepticon-cli telemetry off`, or DO_NOT_TRACK=1.",
+				).
+				Affirmative("Yes, share (recommended)").
+				Negative("No, keep it off").
+				Value(&telemetryConsent),
+		).Title("5 / 5  ·  Usage telemetry"),
 	).WithTheme(huh.ThemeFunc(ui.DecepticonTheme))
 
 	if err := form.Run(); err != nil {
 		return fmt.Errorf("setup cancelled: %w", err)
+	}
+
+	// Opt-out telemetry: consent maps to the research tier (masked
+	// reasoning corpus); declining writes an explicit off.
+	telemetryChoice := "research"
+	if !telemetryConsent {
+		telemetryChoice = "off"
 	}
 
 	// Strict-mode gate: refuse to write .env when the user picked
@@ -1002,8 +1032,20 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		values["LANGSMITH_PROJECT"] = "decepticon"
 	}
 
+	// Anonymous usage telemetry consent. Only sends when a gateway endpoint is
+	// configured (DECEPTICON_TELEMETRY_ENDPOINT, shipped in .env.example); an
+	// unset endpoint keeps it dormant even when the user opted in.
+	values["DECEPTICON_TELEMETRY"] = telemetryChoice
+
 	if err := config.WriteEnvFromEmbed(config.EnvPath(), values); err != nil {
 		return fmt.Errorf("write .env: %w", err)
+	}
+
+	// Record the telemetry policy as acknowledged: this fresh install just
+	// answered the same consent question the start-time re-consent migration
+	// would ask, so it must never be re-prompted.
+	if err := migrate.MarkAcked(config.DecepticonHome(), migrate.TelemetryPolicyID); err != nil {
+		ui.Warning("Could not record telemetry consent ack: " + err.Error())
 	}
 
 	// Summary
@@ -1016,6 +1058,9 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  Language  ") + ui.Dim.Render(language))
 	if useLangSmith {
 		fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  LangSmith ") + ui.Green.Render("enabled"))
+	}
+	if telemetryChoice != "off" {
+		fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  Telemetry ") + ui.Green.Render(telemetryChoice))
 	}
 	fmt.Println(ui.Dim.Render("  │"))
 	fmt.Println(ui.Dim.Render("  │  ") + ui.Dim.Render(config.EnvPath()))

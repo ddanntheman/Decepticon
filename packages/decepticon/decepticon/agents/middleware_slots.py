@@ -4,7 +4,7 @@ Every Decepticon agent factory composes its middleware stack from a
 fixed, canonically-ordered list of named slots. Plugins replace or
 disable slots by name via ``PluginBundle.replaced_middleware`` /
 ``PluginBundle.disabled_middleware`` — no inline middleware construction
-in agent factories, which previously locked SaaS extensions out of the
+in agent factories, which previously locked downstream extensions out of the
 standard stack.
 
 Slot order is the canonical assembly order. The 16 agent factories all
@@ -58,7 +58,9 @@ from decepticon.middleware.opscontrol_notifications import (
     OpsControlNotificationMiddleware,
 )
 from decepticon.middleware.prompt_injection_shield import PromptInjectionShieldMiddleware
+from decepticon.middleware.proxy_key_override import ProxyKeyOverrideMiddleware
 from decepticon.middleware.roe import build_default_sink
+from decepticon.middleware.subagent_transcript_state import SubagentTranscriptState
 
 # Slot enum + per-role applicability mapping + safety-critical set
 # all live in the contract layer now (decepticon_core.contracts.slots).
@@ -163,7 +165,18 @@ def _make_filesystem(*, backend: Any, **_: Any):
 
 
 def _make_subagent(*, backend: Any, subagents: list | None = None, **_: Any):
-    return SubAgentMiddleware(backend=backend, subagents=subagents or [])
+    m = SubAgentMiddleware(backend=backend, subagents=subagents or [])
+    # Register the durable sub-agent transcript channel on the ORCHESTRATOR
+    # state. ``AgentMiddleware.state_schema`` is the per-instance schema that
+    # ``create_agent`` auto-merges into the compiled graph state at build time.
+    # SubAgentMiddleware doesn't override it (it inherits AgentState), so we set
+    # it here to SubagentTranscriptState — which EXTENDS AgentState, preserving
+    # deepagents' own channels (messages / jump_to / structured_response) while
+    # adding ``subagent_transcripts`` with its accumulating reducer. Without
+    # this, the key StreamingRunnable returns would be forwarded by task() but
+    # have no declared channel to land in, and the checkpoint would drop it.
+    m.state_schema = SubagentTranscriptState
+    return m
 
 
 def _make_opplan(*, backend: Any, **_: Any):
@@ -223,6 +236,10 @@ def _make_opscontrol_notification(**_: Any):
 
 def _make_model_override(**_: Any):
     return ModelOverrideMiddleware()
+
+
+def _make_proxy_key_override(**_: Any):
+    return ProxyKeyOverrideMiddleware()
 
 
 def _make_model_fallback(*, fallback_models: list | None = None, **_: Any):
@@ -365,6 +382,7 @@ DEFAULT_SLOT_FACTORIES: dict[MiddlewareSlot, SlotFactory] = {
     MiddlewareSlot.BUDGET: _make_budget,
     MiddlewareSlot.MODEL_OVERRIDE: _make_model_override,
     MiddlewareSlot.MODEL_FALLBACK: _make_model_fallback,
+    MiddlewareSlot.PROXY_KEY_OVERRIDE: _make_proxy_key_override,
     MiddlewareSlot.SUMMARIZATION: _make_summarization,
     MiddlewareSlot.PROMPT_CACHING: _make_prompt_caching,
     MiddlewareSlot.PATCH_TOOL_CALLS: _make_patch_tool_calls,
