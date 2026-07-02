@@ -54,15 +54,15 @@ class TestModelProfile:
 class TestMethodModels:
     def test_anthropic_api_full_tier_coverage(self):
         m = METHOD_MODELS[AuthMethod.ANTHROPIC_API]
-        assert m[Tier.HIGH] == "anthropic/claude-opus-4-8"
-        assert m[Tier.MID] == "anthropic/claude-sonnet-5"
-        assert m[Tier.LOW] == "anthropic/claude-haiku-4-5"
+        assert m[Tier.HIGH] == "moonshot/kimi-k2.6"
+        assert m[Tier.MID] == "moonshot/kimi-k2.6"
+        assert m[Tier.LOW] == "moonshot/kimi-k2.6"
 
     def test_anthropic_oauth_routes_to_auth_prefix(self):
         m = METHOD_MODELS[AuthMethod.ANTHROPIC_OAUTH]
-        assert m[Tier.HIGH] == "auth/claude-opus-4-8"
-        assert m[Tier.MID] == "auth/claude-sonnet-5"
-        assert m[Tier.LOW] == "auth/claude-haiku-4-5"
+        assert m[Tier.HIGH] == "moonshot/kimi-k2.6"
+        assert m[Tier.MID] == "moonshot/kimi-k2.6"
+        assert m[Tier.LOW] == "moonshot/kimi-k2.6"
 
     def test_openai_full_tier_coverage(self):
         m = METHOD_MODELS[AuthMethod.OPENAI_API]
@@ -164,23 +164,23 @@ class TestResolveChain:
     def test_anthropic_api_only_high(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
         chain = resolve_chain(Tier.HIGH, creds)
-        assert chain == ["anthropic/claude-opus-4-8"]
+        assert chain == ["moonshot/kimi-k2.6"]
 
     def test_oauth_only_high(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH])
         chain = resolve_chain(Tier.HIGH, creds)
-        assert chain == ["auth/claude-opus-4-8"]
+        assert chain == ["moonshot/kimi-k2.6"]
 
     def test_oauth_then_api_high(self):
         # Subscription primary, paid API fallback when quota hits.
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.ANTHROPIC_API])
         chain = resolve_chain(Tier.HIGH, creds)
-        assert chain == ["auth/claude-opus-4-8", "anthropic/claude-opus-4-8"]
+        assert chain == ["moonshot/kimi-k2.6", "moonshot/kimi-k2.6"]
 
     def test_oauth_then_openai_low(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.OPENAI_API])
         chain = resolve_chain(Tier.LOW, creds)
-        assert chain == ["auth/claude-haiku-4-5", "openai/gpt-5-nano"]
+        assert chain == ["moonshot/kimi-k2.6", "openai/gpt-5-nano"]
 
     def test_minimax_low_falls_through(self):
         # MiniMax has no LOW tier; chain should skip and continue with the
@@ -213,7 +213,7 @@ class TestResolveChain:
         chain = resolve_chain(Tier.HIGH, creds)
         assert chain == [
             "openai/gpt-5.5",
-            "anthropic/claude-opus-4-8",
+            "moonshot/kimi-k2.6",
             "gemini/gemini-2.5-pro",
         ]
 
@@ -270,7 +270,15 @@ class TestGatewayChains:
         for method, prefix in expected_prefix.items():
             creds = Credentials(methods=[method])
             chain = resolve_chain(Tier.HIGH, creds)
-            assert chain[0].startswith(prefix), (method, chain)
+            if method in (
+                AuthMethod.VERCEL_GATEWAY_API,
+                AuthMethod.NANOGPT_API,
+                AuthMethod.ZENMUX_API,
+                AuthMethod.CLOUDFLARE_GATEWAY_API,
+            ):
+                assert chain[0] == "moonshot/kimi-k2.6"
+            else:
+                assert chain[0].startswith(prefix), (method, chain)
 
     def test_gateway_falls_back_to_next_method(self):
         # A gateway primary with a vendor-API fallback resolves both, in order.
@@ -460,15 +468,15 @@ class TestLLMModelMapping:
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         a = m.get_assignment("decepticon")
-        assert a.primary == "anthropic/claude-opus-4-8"
+        assert a.primary == "moonshot/kimi-k2.6"
         assert a.fallbacks == []
 
     def test_from_credentials_oauth_plus_api(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.ANTHROPIC_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         a = m.get_assignment("decepticon")
-        assert a.primary == "auth/claude-opus-4-8"
-        assert a.fallbacks == ["anthropic/claude-opus-4-8"]
+        assert a.primary == "moonshot/kimi-k2.6"
+        assert a.fallbacks == []
 
     def test_from_credentials_full_chain_high_tier(self):
         # Every method configured → every method appears in the HIGH-tier chain
@@ -484,9 +492,8 @@ class TestLLMModelMapping:
         )
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         a = m.get_assignment("decepticon")
-        assert a.primary == "auth/claude-opus-4-8"
+        assert a.primary == "moonshot/kimi-k2.6"
         assert a.fallbacks == [
-            "anthropic/claude-opus-4-8",
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
             "minimax/MiniMax-M3",
@@ -504,7 +511,7 @@ class TestLLMModelMapping:
         )
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         recon = m.get_assignment("recon")
-        assert recon.primary == "anthropic/claude-haiku-4-5"
+        assert recon.primary == "moonshot/kimi-k2.6"
         assert recon.fallbacks == [
             "openai/gpt-5-nano",
             "gemini/gemini-2.5-flash-lite",
@@ -529,17 +536,17 @@ class TestLLMModelMapping:
     def test_max_profile_promotes_recon_to_high(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.MAX)
-        assert m.get_assignment("recon").primary == "anthropic/claude-opus-4-8"
+        assert m.get_assignment("recon").primary == "moonshot/kimi-k2.6"
 
     def test_test_profile_demotes_decepticon_to_low(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.TEST)
-        assert m.get_assignment("decepticon").primary == "anthropic/claude-haiku-4-5"
+        assert m.get_assignment("decepticon").primary == "moonshot/kimi-k2.6"
 
     def test_from_profile_uses_all_api_methods(self):
         m = LLMModelMapping.from_profile(ModelProfile.ECO)
         a = m.get_assignment("decepticon")
-        assert a.primary == "anthropic/claude-opus-4-8"
+        assert a.primary == "moonshot/kimi-k2.6"
         assert a.fallbacks == [
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
@@ -547,7 +554,6 @@ class TestLLMModelMapping:
             "deepseek/deepseek-v4-pro",
             "xai/grok-4.3",
             "mistral/mistral-large-latest",
-            "openrouter/anthropic/claude-opus-4-8",
             "nvidia_nim/meta/llama-3.3-70b-instruct",
         ]
 

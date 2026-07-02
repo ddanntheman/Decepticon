@@ -20,33 +20,31 @@ class TestModelRouter:
 
     def test_resolve_returns_primary(self):
         # recon is LOW; first method is anthropic_api → haiku.
-        assert self.router.resolve("recon") == "anthropic/claude-haiku-4-5"
+        assert self.router.resolve("recon") == "moonshot/kimi-k2.6"
 
     def test_resolve_decepticon_is_high_tier(self):
-        assert self.router.resolve("decepticon") == "anthropic/claude-opus-4-8"
+        assert self.router.resolve("decepticon") == "moonshot/kimi-k2.6"
 
     def test_resolve_with_fallback_returns_chain(self):
         chain = self.router.resolve_with_fallback("recon")
         assert chain == [
-            "anthropic/claude-haiku-4-5",
+            "moonshot/kimi-k2.6",
             "openai/gpt-5-nano",
             "gemini/gemini-2.5-flash-lite",
             "deepseek/deepseek-v4-flash",
-            "openrouter/anthropic/claude-haiku-4-5",
             "nvidia_nim/meta/llama-3.2-3b-instruct",
         ]
 
     def test_resolve_with_fallback_high_tier_full_chain(self):
         chain = self.router.resolve_with_fallback("decepticon")
         assert chain == [
-            "anthropic/claude-opus-4-8",
+            "moonshot/kimi-k2.6",
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
             "minimax/MiniMax-M3",
             "deepseek/deepseek-v4-pro",
             "xai/grok-4.3",
             "mistral/mistral-large-latest",
-            "openrouter/anthropic/claude-opus-4-8",
             "nvidia_nim/meta/llama-3.3-70b-instruct",
         ]
 
@@ -57,7 +55,7 @@ class TestModelRouter:
     def test_get_assignment_returns_full_config(self):
         a = self.router.get_assignment("recon")
         assert isinstance(a, ModelAssignment)
-        assert a.primary == "anthropic/claude-haiku-4-5"
+        assert a.primary == "moonshot/kimi-k2.6"
         assert a.temperature == 0.3
 
     def test_resolve_with_single_credential_no_fallback(self):

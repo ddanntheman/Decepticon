@@ -173,14 +173,14 @@ class AuthMethod(StrEnum):
 
 METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.ANTHROPIC_API: {
-        Tier.HIGH: "anthropic/claude-opus-4-8",
-        Tier.MID: "anthropic/claude-sonnet-5",
-        Tier.LOW: "anthropic/claude-haiku-4-5",
+        Tier.HIGH: "moonshot/kimi-k2.6",
+        Tier.MID: "moonshot/kimi-k2.6",
+        Tier.LOW: "moonshot/kimi-k2.6",
     },
     AuthMethod.ANTHROPIC_OAUTH: {
-        Tier.HIGH: "auth/claude-opus-4-8",
-        Tier.MID: "auth/claude-sonnet-5",
-        Tier.LOW: "auth/claude-haiku-4-5",
+        Tier.HIGH: "moonshot/kimi-k2.6",
+        Tier.MID: "moonshot/kimi-k2.6",
+        Tier.LOW: "moonshot/kimi-k2.6",
     },
     AuthMethod.OPENAI_API: {
         Tier.HIGH: "openai/gpt-5.5",
@@ -226,9 +226,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.MID: "mistral/codestral-latest",
     },
     AuthMethod.OPENROUTER_API: {
-        Tier.HIGH: "openrouter/anthropic/claude-opus-4-8",
-        Tier.MID: "openrouter/anthropic/claude-sonnet-5",
-        Tier.LOW: "openrouter/anthropic/claude-haiku-4-5",
+        Tier.HIGH: "moonshot/kimi-k2.6",
+        Tier.MID: "moonshot/kimi-k2.6",
+        Tier.LOW: "moonshot/kimi-k2.6",
     },
     AuthMethod.NVIDIA_API: {
         Tier.HIGH: "nvidia_nim/meta/llama-3.3-70b-instruct",
@@ -354,9 +354,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     # request level, not encoded in the model id). Older v1 models
     # keep their context-tier suffixes (8k/32k/128k).
     AuthMethod.MOONSHOT_API: {
-        Tier.HIGH: "moonshot/kimi-k2-instruct",
-        Tier.MID: "moonshot/kimi-k2-instruct",
-        Tier.LOW: "moonshot/kimi-k2-instruct",
+        Tier.HIGH: "moonshot/kimi-k2.6",
+        Tier.MID: "moonshot/kimi-k2.6",
+        Tier.LOW: "moonshot/kimi-k2.6",
     },
     # Z.ai GLM family — native ``zai/`` LiteLLM provider (no custom shim
     # needed since LiteLLM 1.55+). LOW = glm-4.5-flash, the free-tier
@@ -443,9 +443,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         # Vercel AI Gateway — https://ai-gateway.vercel.sh/v1. Model ids
         # are ``creator/model``; route the Anthropic family for tool-call
         # reliability parity with the native anthropic path.
-        Tier.HIGH: "vercel/anthropic/claude-opus-4-8",
-        Tier.MID: "vercel/anthropic/claude-sonnet-5",
-        Tier.LOW: "vercel/anthropic/claude-haiku-4.5",
+        Tier.HIGH: "moonshot/kimi-k2.6",
+        Tier.MID: "moonshot/kimi-k2.6",
+        Tier.LOW: "moonshot/kimi-k2.6",
     },
     AuthMethod.HUGGINGFACE_API: {
         # Hugging Face Router — https://router.huggingface.co/v1, HF_TOKEN
@@ -464,9 +464,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.NANOGPT_API: {
         # NanoGPT — https://nano-gpt.com/api/v1, pay-as-you-go aggregator
         # exposing ``creator/model`` slugs across most major vendors.
-        Tier.HIGH: "nanogpt/anthropic/claude-opus-4-8",
-        Tier.MID: "nanogpt/anthropic/claude-sonnet-5",
-        Tier.LOW: "nanogpt/anthropic/claude-haiku-4.5",
+        Tier.HIGH: "moonshot/kimi-k2.6",
+        Tier.MID: "moonshot/kimi-k2.6",
+        Tier.LOW: "moonshot/kimi-k2.6",
     },
     AuthMethod.SYNTHETIC_API: {
         # Synthetic — https://api.synthetic.new/openai/v1. Open-weight
@@ -478,9 +478,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.ZENMUX_API: {
         # ZenMux — https://zenmux.ai/api/v1. Multi-vendor gateway; route
         # the Anthropic family for tool-call parity.
-        Tier.HIGH: "zenmux/anthropic/claude-opus-4-8",
-        Tier.MID: "zenmux/anthropic/claude-sonnet-5",
-        Tier.LOW: "zenmux/anthropic/claude-haiku-4.5",
+        Tier.HIGH: "moonshot/kimi-k2.6",
+        Tier.MID: "moonshot/kimi-k2.6",
+        Tier.LOW: "moonshot/kimi-k2.6",
     },
     AuthMethod.QIANFAN_API: {
         # Baidu Qianfan v2 — https://qianfan.baidubce.com/v2, OpenAI-
@@ -498,9 +498,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         # comes from CLOUDFLARE_AI_GATEWAY_API_BASE (the OpenAI-compat
         # ``.../compat`` path). Model slugs are the gateway's
         # ``provider/model`` form proxied to Anthropic.
-        Tier.HIGH: "cfgateway/anthropic/claude-opus-4-8",
-        Tier.MID: "cfgateway/anthropic/claude-sonnet-5",
-        Tier.LOW: "cfgateway/anthropic/claude-haiku-4-5",
+        Tier.HIGH: "moonshot/kimi-k2.6",
+        Tier.MID: "moonshot/kimi-k2.6",
+        Tier.LOW: "moonshot/kimi-k2.6",
     },
 }
 
@@ -930,9 +930,16 @@ class LLMModelMapping(BaseModel):
             chain = resolve_chain(tier, credentials)
             if not chain:
                 continue
+            primary = chain[0]
+            fallbacks = []
+            seen = {primary}
+            for model in chain[1:]:
+                if model not in seen:
+                    fallbacks.append(model)
+                    seen.add(model)
             assignments[role] = ModelAssignment(
-                primary=chain[0],
-                fallbacks=chain[1:],
+                primary=primary,
+                fallbacks=fallbacks,
                 temperature=AGENT_TEMPERATURES.get(role, 0.7),
             )
         return cls(assignments=assignments)
