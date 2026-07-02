@@ -312,6 +312,7 @@ def _is_placeholder_value(value: str) -> bool:
         return True
     return False
 
+
 # Minimum length for any value that should be treated as a real key. All
 # vendor-issued keys exceed this — Anthropic ``sk-ant-api03-…`` ≈ 100 chars,
 # OpenAI ``sk-…`` ≥ 48 chars, Google ``AIza…`` 39 chars. 24 leaves headroom
@@ -892,6 +893,7 @@ class _ProxiedChatOpenAI(ChatOpenAI):
         except Exception as exc:
             _reraise_with_actionable_message(exc, self.model_name)
             raise
+        _check_empty_response(result, self.model_name)
         _log_served_model(self.model_name, result)
         return result
 
@@ -909,6 +911,7 @@ class _ProxiedChatOpenAI(ChatOpenAI):
         except Exception as exc:
             _reraise_with_actionable_message(exc, self.model_name)
             raise
+        _check_empty_response(result, self.model_name)
         _log_served_model(self.model_name, result)
         return result
 
@@ -935,6 +938,30 @@ def _log_served_model(requested: str, result: object) -> None:
             log.debug("llm.attribution requested=%s served=%s", requested, served)
     except Exception:
         pass
+
+
+def _check_empty_response(result: Any, model_name: str) -> None:
+    """Check if the model returned an empty response and raise an exception."""
+    from langchain_core.messages import AIMessage
+
+    if isinstance(result, AIMessage):
+        content_str = str(result.content).strip()
+        has_tools = bool(getattr(result, "tool_calls", None))
+        has_reasoning = bool(result.additional_kwargs.get("reasoning_content"))
+
+        # Check if the response is completely empty (no text, no tools, no reasoning)
+        if not content_str and not has_tools and not has_reasoning:
+            finish_reason = result.response_metadata.get("finish_reason") or ""
+            if finish_reason == "content_filter":
+                raise RuntimeError(
+                    f"Model {model_name} returned an empty response with finish_reason='content_filter'. "
+                    f"This indicates a safety refusal."
+                )
+            else:
+                raise RuntimeError(
+                    f"Model {model_name} returned an empty response (no content, no tool calls, no reasoning). "
+                    f"This indicates a potential safety refusal or API failure."
+                )
 
 
 def _model_drops_temperature(model: str) -> bool:
@@ -1163,6 +1190,7 @@ class _DeepSeekThinkingChatOpenAI(_ThinkingChatOpenAI):
 
 class _MoonshotThinkingChatOpenAI(_ThinkingChatOpenAI):
     """ChatOpenAI subclass that preserves Moonshot/Kimi ``reasoning_content``."""
+
     pass
 
 

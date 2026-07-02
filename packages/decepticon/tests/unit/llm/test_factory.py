@@ -177,14 +177,12 @@ class TestLLMFactory:
     def test_get_model_returns_chat_model(self):
         model = self.factory.get_model("recon")
         assert model is not None
-        assert model.model_name == "anthropic/claude-opus-4-8"
+        assert model.model_name == "anthropic/claude-haiku-4-5"
 
     def test_get_model_caches_instances(self):
         m1 = self.factory.get_model("recon")
         m2 = self.factory.get_model("recon")
         assert m1 is m2
-
-
 
     def test_get_model_unknown_role_raises(self):
         with pytest.raises(KeyError, match="No model assignment"):
@@ -781,7 +779,10 @@ class TestDeepSeekReasoningContent:
         from langchain_core.messages import AIMessage
         from langchain_core.outputs import ChatGeneration, ChatResult
 
-        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+        from decepticon.llm.factory import (
+            _DeepSeekThinkingChatOpenAI,
+            _ThinkingChatOpenAI,
+        )
 
         # Simulate the OpenAI response dict with reasoning_content
         response_dict = {
@@ -803,7 +804,7 @@ class TestDeepSeekReasoningContent:
         parent_result = ChatResult(generations=[ChatGeneration(message=msg)])
 
         with patch.object(
-            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            _ThinkingChatOpenAI.__bases__[0],
             "_create_chat_result",
             return_value=parent_result,
         ):
@@ -822,7 +823,10 @@ class TestDeepSeekReasoningContent:
         from langchain_core.messages import AIMessage
         from langchain_core.outputs import ChatGeneration, ChatResult
 
-        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+        from decepticon.llm.factory import (
+            _DeepSeekThinkingChatOpenAI,
+            _ThinkingChatOpenAI,
+        )
 
         response_dict = {
             "choices": [
@@ -835,7 +839,7 @@ class TestDeepSeekReasoningContent:
         parent_result = ChatResult(generations=[ChatGeneration(message=msg)])
 
         with patch.object(
-            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            _ThinkingChatOpenAI.__bases__[0],
             "_create_chat_result",
             return_value=parent_result,
         ):
@@ -853,7 +857,10 @@ class TestDeepSeekReasoningContent:
         from langchain_core.messages import AIMessageChunk
         from langchain_core.outputs import ChatGenerationChunk
 
-        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+        from decepticon.llm.factory import (
+            _DeepSeekThinkingChatOpenAI,
+            _ThinkingChatOpenAI,
+        )
 
         # Build a fake raw SSE chunk dict with reasoning_content in the delta
         raw_chunk = {
@@ -881,7 +888,7 @@ class TestDeepSeekReasoningContent:
         method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
 
         with patch.object(
-            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            _ThinkingChatOpenAI.__bases__[0],
             "_convert_chunk_to_generation_chunk",
             return_value=base_chunk,
         ):
@@ -898,7 +905,10 @@ class TestDeepSeekReasoningContent:
         from langchain_core.messages import AIMessageChunk
         from langchain_core.outputs import ChatGenerationChunk
 
-        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+        from decepticon.llm.factory import (
+            _DeepSeekThinkingChatOpenAI,
+            _ThinkingChatOpenAI,
+        )
 
         raw_chunk = {
             "choices": [
@@ -916,7 +926,7 @@ class TestDeepSeekReasoningContent:
         method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
 
         with patch.object(
-            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            _ThinkingChatOpenAI.__bases__[0],
             "_convert_chunk_to_generation_chunk",
             return_value=base_chunk,
         ):
@@ -945,7 +955,10 @@ class TestDeepSeekReasoningContent:
 
         from langchain_core.messages import AIMessage, HumanMessage
 
-        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+        from decepticon.llm.factory import (
+            _DeepSeekThinkingChatOpenAI,
+            _ThinkingChatOpenAI,
+        )
 
         messages = [
             HumanMessage(content="hi"),
@@ -965,7 +978,7 @@ class TestDeepSeekReasoningContent:
         }
 
         with patch.object(
-            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            _ThinkingChatOpenAI.__bases__[0],
             "_get_request_payload",
             return_value=mock_payload,
         ):
@@ -984,7 +997,10 @@ class TestDeepSeekReasoningContent:
         from langchain_core.messages import AIMessageChunk
         from langchain_core.outputs import ChatGenerationChunk
 
-        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+        from decepticon.llm.factory import (
+            _DeepSeekThinkingChatOpenAI,
+            _ThinkingChatOpenAI,
+        )
 
         raw_chunk = {
             "choices": [
@@ -1005,7 +1021,7 @@ class TestDeepSeekReasoningContent:
         method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
 
         with patch.object(
-            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            _ThinkingChatOpenAI.__bases__[0],
             "_convert_chunk_to_generation_chunk",
             return_value=base_chunk,
         ):
@@ -1021,7 +1037,10 @@ class TestDeepSeekReasoningContent:
         from langchain_core.messages import AIMessageChunk
         from langchain_core.outputs import ChatGenerationChunk
 
-        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+        from decepticon.llm.factory import (
+            _DeepSeekThinkingChatOpenAI,
+            _ThinkingChatOpenAI,
+        )
 
         raw_chunk = {
             "choices": [
@@ -1038,7 +1057,7 @@ class TestDeepSeekReasoningContent:
         method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
 
         with patch.object(
-            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            _ThinkingChatOpenAI.__bases__[0],
             "_convert_chunk_to_generation_chunk",
             return_value=base_chunk,
         ):
@@ -1054,7 +1073,10 @@ class TestDeepSeekReasoningContent:
         from langchain_core.messages import AIMessageChunk
         from langchain_core.outputs import ChatGenerationChunk
 
-        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+        from decepticon.llm.factory import (
+            _DeepSeekThinkingChatOpenAI,
+            _ThinkingChatOpenAI,
+        )
 
         raw_chunk = {"choices": []}
 
@@ -1064,7 +1086,7 @@ class TestDeepSeekReasoningContent:
         method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
 
         with patch.object(
-            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            _ThinkingChatOpenAI.__bases__[0],
             "_convert_chunk_to_generation_chunk",
             return_value=base_chunk,
         ):
@@ -1079,14 +1101,17 @@ class TestDeepSeekReasoningContent:
 
         from langchain_core.messages import AIMessageChunk
 
-        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+        from decepticon.llm.factory import (
+            _DeepSeekThinkingChatOpenAI,
+            _ThinkingChatOpenAI,
+        )
 
         raw_chunk = {"type": "content.delta"}  # parent returns None for these
         instance = MagicMock(spec=_DeepSeekThinkingChatOpenAI)
         method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
 
         with patch.object(
-            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            _ThinkingChatOpenAI.__bases__[0],
             "_convert_chunk_to_generation_chunk",
             return_value=None,
         ):
@@ -1101,7 +1126,10 @@ class TestDeepSeekReasoningContent:
         from langchain_core.messages import AIMessageChunk
         from langchain_core.outputs import ChatGenerationChunk
 
-        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+        from decepticon.llm.factory import (
+            _DeepSeekThinkingChatOpenAI,
+            _ThinkingChatOpenAI,
+        )
 
         # Some LangChain versions nest under "chunk" key
         raw_chunk = {
@@ -1125,7 +1153,7 @@ class TestDeepSeekReasoningContent:
         method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
 
         with patch.object(
-            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            _ThinkingChatOpenAI.__bases__[0],
             "_convert_chunk_to_generation_chunk",
             return_value=base_chunk,
         ):
@@ -1141,7 +1169,10 @@ class TestDeepSeekReasoningContent:
 
         from langchain_core.messages import AIMessage, HumanMessage
 
-        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+        from decepticon.llm.factory import (
+            _DeepSeekThinkingChatOpenAI,
+            _ThinkingChatOpenAI,
+        )
 
         messages = [
             HumanMessage(content="q1"),
@@ -1161,7 +1192,7 @@ class TestDeepSeekReasoningContent:
         }
 
         with patch.object(
-            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            _ThinkingChatOpenAI.__bases__[0],
             "_get_request_payload",
             return_value=mock_payload,
         ):
