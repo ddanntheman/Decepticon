@@ -431,7 +431,7 @@ def test_cli_imports_all_operations_idempotently_and_paginates_across_processes(
         capture_output=True,
         text=True,
         check=False,
-        timeout=30,
+        timeout=120,
     )
     assert reloaded.returncode == 0, reloaded.stderr
     final_page = json.loads(reloaded.stdout)

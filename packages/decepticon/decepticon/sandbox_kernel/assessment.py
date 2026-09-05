@@ -9,7 +9,7 @@ import os
 import re
 import sqlite3
 import stat
-from contextlib import ExitStack, closing
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
@@ -386,6 +386,9 @@ def _header_result(control: str, url: str, artifact: dict[str, Any]) -> tuple[st
     return ("pass" if passed else "fail"), "Supplied-artifact check: " + reason
 
 
+_PATH_COMPONENT = re.compile(r"[A-Za-z0-9_.-]+")
+
+
 def _relative_path(value: Any) -> PurePosixPath:
     text = _text(value, "evidence_path")
     path = PurePosixPath(text)
@@ -396,6 +399,7 @@ def _relative_path(value: Any) -> PurePosixPath:
         or PureWindowsPath(text).drive
         or ".." in path.parts
         or not path.parts
+        or any(not _PATH_COMPONENT.fullmatch(part) for part in path.parts)
     ):
         raise AssessmentError("Evidence paths must be workspace-relative without traversal")
     if path.parent == PurePosixPath("assessment") and path.name in {
@@ -783,51 +787,52 @@ class AssessmentStore:
             raise AssessmentError(
                 "Secure workspace-relative evidence reads are unavailable on this platform"
             )
+        descriptors: list[int] = []
         try:
-            with ExitStack() as stack:
-                flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
-                directory = os.open(self.workspace, flags)
-                stack.callback(os.close, directory)
-                for part in path.parts[:-1]:
-                    directory = os.open(part, flags, dir_fd=directory)
-                    stack.callback(os.close, directory)
-                descriptor = os.open(
-                    path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory
-                )
-                stack.callback(os.close, descriptor)
-                before = os.fstat(descriptor)
-                if not stat.S_ISREG(before.st_mode) or not before.st_size:
-                    raise AssessmentError("Evidence must be a nonempty regular file")
-                if capture and before.st_size > 2 * 1024 * 1024:
-                    raise AssessmentError("HTTP response artifacts must be at most 2 MiB")
-                digest = hashlib.sha256()
-                chunks = []
-                size = 0
-                with os.fdopen(descriptor, "rb", closefd=False) as stream:
-                    while chunk := stream.read(1024 * 1024):
-                        size += len(chunk)
-                        digest.update(chunk)
-                        if capture:
-                            if size > 2 * 1024 * 1024:
-                                raise AssessmentError(
-                                    "HTTP response artifacts must be at most 2 MiB"
-                                )
-                            chunks.append(chunk)
-                after = os.fstat(descriptor)
-                if size != before.st_size or any(
-                    getattr(before, field) != getattr(after, field)
-                    for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
-                ):
-                    raise AssessmentError("Evidence changed while it was being read")
-                return {
-                    "path": str(path),
-                    "sha256": digest.hexdigest(),
-                    "size_bytes": size,
-                }, b"".join(chunks)
+            flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
+            directory = os.open(str(self.workspace), flags)
+            descriptors.append(directory)
+            for part in path.parts[:-1]:
+                directory = os.open(part, flags, dir_fd=directory)
+                descriptors.append(directory)
+            descriptor = os.open(
+                path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory
+            )
+            descriptors.append(descriptor)
+            before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode) or not before.st_size:
+                raise AssessmentError("Evidence must be a nonempty regular file")
+            if capture and before.st_size > 2 * 1024 * 1024:
+                raise AssessmentError("HTTP response artifacts must be at most 2 MiB")
+            digest = hashlib.sha256()
+            chunks = []
+            size = 0
+            with os.fdopen(descriptor, "rb", closefd=False) as stream:
+                while chunk := stream.read(1024 * 1024):
+                    size += len(chunk)
+                    digest.update(chunk)
+                    if capture:
+                        if size > 2 * 1024 * 1024:
+                            raise AssessmentError("HTTP response artifacts must be at most 2 MiB")
+                        chunks.append(chunk)
+            after = os.fstat(descriptor)
+            if size != before.st_size or any(
+                getattr(before, field) != getattr(after, field)
+                for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+            ):
+                raise AssessmentError("Evidence changed while it was being read")
+            return {
+                "path": str(path),
+                "sha256": digest.hexdigest(),
+                "size_bytes": size,
+            }, b"".join(chunks)
         except OSError as exc:
             raise AssessmentError(
                 f"Evidence {str(path)!r} is unreadable, missing, or symlinked"
             ) from exc
+        finally:
+            for descriptor in descriptors:
+                os.close(descriptor)
 
     def _case(self, state: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
         case_id = _text(payload.get("case_id"), "case_id", 100)
