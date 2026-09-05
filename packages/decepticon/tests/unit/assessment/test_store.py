@@ -5,6 +5,7 @@ import json
 import multiprocessing
 import os
 import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -967,7 +968,7 @@ def test_legacy_v1_missing_denials_preserves_progress_checksums_and_history(tmp_
     expected = store.dispatch("report", {})
     expected["history"][0]["details"].pop("denied_hosts")
     database = tmp_path / "assessment" / "coverage.sqlite3"
-    with sqlite3.connect(database) as db:
+    with closing(sqlite3.connect(database)) as db, db:
         state = json.loads(db.execute("SELECT state FROM ledger").fetchone()[0])
         state.pop("denied_hosts")
         raw = json.dumps(state, sort_keys=True, separators=(",", ":"))
@@ -991,7 +992,7 @@ def test_legacy_v1_missing_denials_preserves_progress_checksums_and_history(tmp_
     assert initialize(fresh, denied_hosts=[])["revision"] == expected["revision"]
     with pytest.raises(AssessmentError, match="Immutable engagement denied_hosts"):
         initialize(fresh, denied_hosts=["excluded.example.test"])
-    with sqlite3.connect(database) as db:
+    with closing(sqlite3.connect(database)) as db, db:
         assert db.execute("SELECT state, sha256, revision FROM ledger").fetchone() == legacy_row
         assert db.execute("SELECT * FROM history ORDER BY revision").fetchall() == legacy_history
         assert "denied_hosts" not in json.loads(legacy_row[0])
@@ -1001,7 +1002,7 @@ def test_legacy_v1_missing_denials_preserves_progress_checksums_and_history(tmp_
     assert updated["revision"] == expected["revision"] + 1
     assert updated["denied_hosts"] == []
     assert case_for(AssessmentStore(tmp_path), "http.nosniff")["history"] == saved["history"]
-    with sqlite3.connect(database) as db:
+    with closing(sqlite3.connect(database)) as db, db:
         raw, digest = db.execute("SELECT state, sha256 FROM ledger").fetchone()
         assert json.loads(raw)["denied_hosts"] == []
         assert hashlib.sha256(raw.encode()).hexdigest() == digest
@@ -1014,7 +1015,7 @@ def test_legacy_v1_missing_denials_preserves_progress_checksums_and_history(tmp_
 def test_legacy_optional_default_does_not_bypass_raw_state_checksum(tmp_path):
     store = AssessmentStore(tmp_path)
     initialize(store)
-    with sqlite3.connect(tmp_path / "assessment" / "coverage.sqlite3") as db:
+    with closing(sqlite3.connect(tmp_path / "assessment" / "coverage.sqlite3")) as db, db:
         state = json.loads(db.execute("SELECT state FROM ledger").fetchone()[0])
         state.pop("denied_hosts")
         raw = json.dumps(state, sort_keys=True, separators=(",", ":"))
@@ -1028,7 +1029,7 @@ def test_legacy_optional_default_does_not_bypass_raw_state_checksum(tmp_path):
 def test_missing_field_cannot_erase_an_explicit_initialized_deny_policy(tmp_path):
     store = AssessmentStore(tmp_path)
     initialize(store, denied_hosts=["excluded.example.test"])
-    with sqlite3.connect(tmp_path / "assessment" / "coverage.sqlite3") as db:
+    with closing(sqlite3.connect(tmp_path / "assessment" / "coverage.sqlite3")) as db, db:
         state = json.loads(db.execute("SELECT state FROM ledger").fetchone()[0])
         state.pop("denied_hosts")
         raw = json.dumps(state, sort_keys=True, separators=(",", ":"))
@@ -1058,7 +1059,7 @@ def test_checksummed_denial_state_is_validated_and_existing_operations_must_comp
     store = AssessmentStore(tmp_path)
     initialize(store, denied_hosts=["excluded.example.test"])
     import_operations(store)
-    with sqlite3.connect(tmp_path / "assessment" / "coverage.sqlite3") as db:
+    with closing(sqlite3.connect(tmp_path / "assessment" / "coverage.sqlite3")) as db, db:
         state = json.loads(db.execute("SELECT state FROM ledger").fetchone()[0])
         state["denied_hosts"] = denied_hosts
         raw = json.dumps(state, sort_keys=True, separators=(",", ":"))
@@ -1194,12 +1195,12 @@ def test_schema_mismatch_and_copied_workspace_are_rejected(tmp_path):
     initialize(store)
     import_operations(store)
     database = workspace / "assessment" / "coverage.sqlite3"
-    with sqlite3.connect(database) as db:
+    with closing(sqlite3.connect(database)) as db, db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 1
         db.execute("PRAGMA user_version = 99")
     with pytest.raises(AssessmentError):
         initialize(store)
-    with sqlite3.connect(database) as db:
+    with closing(sqlite3.connect(database)) as db, db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 99
         db.execute("PRAGMA user_version = 1")
     other = tmp_path / "two"
@@ -1218,7 +1219,7 @@ def test_checksummed_but_inconsistent_state_is_not_silently_rebuilt(tmp_path, co
     initialize(store)
     import_operations(store)
     database = tmp_path / "assessment" / "coverage.sqlite3"
-    with sqlite3.connect(database) as db:
+    with closing(sqlite3.connect(database)) as db, db:
         state = json.loads(db.execute("SELECT state FROM ledger").fetchone()[0])
         case_id = next(iter(state["cases"]))
         if corruption == "missing_case":
@@ -1247,7 +1248,7 @@ def test_corrupt_audit_history_is_rejected(tmp_path):
     store = AssessmentStore(tmp_path)
     initialize(store)
     import_operations(store)
-    with sqlite3.connect(tmp_path / "assessment" / "coverage.sqlite3") as db:
+    with closing(sqlite3.connect(tmp_path / "assessment" / "coverage.sqlite3")) as db, db:
         db.execute("UPDATE history SET details = '{' WHERE revision = 1")
     with pytest.raises(AssessmentError):
         initialize(store)
