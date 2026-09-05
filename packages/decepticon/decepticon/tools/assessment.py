@@ -214,5 +214,67 @@ def assessment_record_result(
     )
 
 
-ASSESSMENT_REVIEW_TOOLS = [assessment_status, assessment_check_headers, assessment_record_result]
+@tool(
+    description="List the versioned defensive scenario catalog, primary sources, limitations, and exact normalized artifact schemas. No target requests or exploit instructions."
+)
+def assessment_scenario_catalog(
+    state: Annotated[dict[str, Any], InjectedState], config: RunnableConfig
+) -> str:
+    sandbox, _, workspace = _context(state, config)
+    return json.dumps(sandbox.assessment("scenario_catalog", {}, workspace_path=workspace))
+
+
+@tool(
+    description="Evaluate an existing workspace-relative JSON artifact against a fixed defensive scenario. Consult assessment_scenario_catalog for its schema. Results describe supplied policy/simulation evidence, not live control verification, and do not update baseline coverage. No commands or target requests are executed."
+)
+def assessment_evaluate_scenario(
+    scenario_id: str,
+    evidence_path: str,
+    state: Annotated[dict[str, Any], InjectedState],
+    config: RunnableConfig,
+) -> str:
+    sandbox, _, workspace = _context(state, config)
+    return json.dumps(
+        sandbox.assessment(
+            "evaluate_scenario",
+            {"scenario_id": scenario_id, "evidence_path": evidence_path},
+            workspace_path=workspace,
+        )
+    )
+
+
+@tool(
+    description="Prioritize supplied CVE applicability against a supplied CISA KEV JSON snapshot. Both paths must be workspace-relative; observations require schema_version=1, an HTTP(S) asset URL, timezone-aware observed_at, evidence_kind=scanner_export|vendor_advisory|operator_attestation and vulnerabilities containing cve_id, basis=vendor_advisory|scanner_result|manual_review and optional applicability=affected|not_affected|unknown. No product/version guessing, exploit retrieval, or target requests. Matches are triage priorities, not confirmed vulnerabilities. Follow next_offset; priority_counts describe the whole input, not only this page."
+)
+def assessment_prioritize_kev(
+    catalog_path: str,
+    observation_path: str,
+    state: Annotated[dict[str, Any], InjectedState],
+    config: RunnableConfig,
+    offset: int = 0,
+    limit: int = 50,
+) -> str:
+    sandbox, _, workspace = _context(state, config)
+    return json.dumps(
+        sandbox.assessment(
+            "prioritize_kev",
+            {
+                "catalog_path": catalog_path,
+                "observation_path": observation_path,
+                "offset": offset,
+                "limit": limit,
+            },
+            workspace_path=workspace,
+        )
+    )
+
+
+ASSESSMENT_REVIEW_TOOLS = [
+    assessment_status,
+    assessment_check_headers,
+    assessment_record_result,
+    assessment_scenario_catalog,
+    assessment_evaluate_scenario,
+    assessment_prioritize_kev,
+]
 ASSESSMENT_TOOLS = [assessment_initialize, assessment_import, *ASSESSMENT_REVIEW_TOOLS]

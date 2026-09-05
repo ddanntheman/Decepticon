@@ -25,6 +25,39 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace", required=True, type=Path)
     parser.add_argument("--expected-revision", type=int)
     commands = parser.add_subparsers(dest="action", required=True)
+    commands.add_parser(
+        "scenarios", help="List sourced defensive scenarios and their artifact contracts"
+    )
+    scenario = commands.add_parser(
+        "evaluate-scenario", help="Check a supplied artifact; exits 0=pass, 1=fail, 3=inconclusive"
+    )
+    scenario.add_argument("scenario_id")
+    scenario.add_argument(
+        "--evidence", required=True, help="Workspace-relative JSON artifact; no target requests"
+    )
+    kev = commands.add_parser(
+        "prioritize-kev",
+        help="Prioritize supplied CVE assertions against a supplied KEV catalog",
+        description="Observations require schema_version=1, an HTTP(S) asset URL, a timezone-aware "
+        "observed_at, evidence_kind=scanner_export|vendor_advisory|operator_attestation, and a "
+        "vulnerabilities array. Each record requires cve_id and "
+        "basis=vendor_advisory|scanner_result|manual_review; "
+        "applicability=affected|not_affected|unknown defaults to unknown. "
+        "This is supplied-artifact prioritization, not independent vulnerability verification.",
+    )
+    kev.add_argument(
+        "--catalog", required=True, help="Workspace-relative CISA JSON snapshot (max 16 MiB)"
+    )
+    kev.add_argument(
+        "--observations", required=True, help="Workspace-relative normalized CVE observations"
+    )
+    kev.add_argument("--offset", type=int, default=0)
+    kev.add_argument("--limit", type=int, default=50)
+    kev.add_argument(
+        "--fail-on-urgent",
+        action="store_true",
+        help="Exit 1 for urgent records, 3 for incomplete intelligence/applicability",
+    )
     initialize = commands.add_parser("init", help="Initialize a scoped assessment baseline")
     initialize.add_argument("--name", required=True)
     initialize.add_argument("--scope", action="append", required=True)
@@ -115,6 +148,20 @@ def _read_artifact(value: str) -> tuple[Path, str]:
 
 def _payload(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     action = args.action
+    if action == "scenarios":
+        return "scenario_catalog", {}
+    if action == "evaluate-scenario":
+        return "evaluate_scenario", {
+            "scenario_id": args.scenario_id,
+            "evidence_path": args.evidence,
+        }
+    if action == "prioritize-kev":
+        return "prioritize_kev", {
+            "catalog_path": args.catalog,
+            "observation_path": args.observations,
+            "offset": args.offset,
+            "limit": args.limit,
+        }
     if action == "init":
         payload = {
             "engagement_name": args.name,
@@ -169,4 +216,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Assessment failed: {exc}", file=sys.stderr)
         return 2
     print(output, end="" if markdown else "\n")
+    if action == "evaluate_scenario":
+        return {"pass": 0, "fail": 1, "inconclusive": 3}.get(result.get("status"), 3)
+    if action == "prioritize_kev" and args.fail_on_urgent:
+        if result["priority_counts"]["urgent"]:
+            return 1
+        if not result["total"] or result["priority_counts"]["investigate"]:
+            return 3
     return int(bool(getattr(args, "fail_on_gaps", False)) and result.get("complete") is not True)

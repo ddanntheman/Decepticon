@@ -173,6 +173,9 @@ class AssessmentRequest(BaseModel):
         "check_headers",
         "report",
         "gaps",
+        "scenario_catalog",
+        "evaluate_scenario",
+        "prioritize_kev",
     ]
     payload: dict[str, Any] = Field(default_factory=dict)
 
@@ -181,10 +184,16 @@ def _assessment_workspace(workspace_path: str) -> Path:
     if not re.fullmatch(r"/workspace(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})*", workspace_path):
         raise HTTPException(status_code=422, detail="Invalid assessment workspace")
     root = Path(os.environ.get("SANDBOX_ROOT_DIR", "/workspace")).resolve()
-    workspace = root.joinpath(*PurePosixPath(workspace_path).parts[2:]).resolve()
-    if not workspace.is_relative_to(root):
-        raise HTTPException(status_code=422, detail="Assessment workspace escapes sandbox root")
-    return workspace
+    workspace = root.joinpath(*PurePosixPath(workspace_path).parts[2:])
+    try:
+        resolved = workspace.resolve()
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=422, detail="Invalid assessment workspace") from exc
+    if resolved != workspace or not resolved.is_relative_to(root):
+        raise HTTPException(
+            status_code=422, detail="Assessment workspace must not use symlink aliases"
+        )
+    return resolved
 
 
 class ProvisionEgressRequest(BaseModel):

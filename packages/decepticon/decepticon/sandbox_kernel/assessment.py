@@ -33,7 +33,15 @@ _SOURCE_STATUSES = {"ok", "empty", "error", "unavailable", "mock"}
 _CONTROLS = ("http.nosniff", "http.hsts", "auth.access-control", "source.authorization")
 _STATUSES = ("untested", "pass", "fail", "blocked", "inconclusive", "not_applicable")
 _MUTATIONS = {"initialize", "import", "access", "record", "check_headers"}
-_ACTIONS = _MUTATIONS | {"inventory", "next", "report", "gaps"}
+_ACTIONS = _MUTATIONS | {
+    "inventory",
+    "next",
+    "report",
+    "gaps",
+    "scenario_catalog",
+    "evaluate_scenario",
+    "prioritize_kev",
+}
 _TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 
 
@@ -475,9 +483,14 @@ class AssessmentStore:
 
     def __init__(self, workspace: str | Path) -> None:
         try:
-            self.workspace = Path(workspace).resolve(strict=True)
+            requested = Path(workspace)
+            if requested.is_symlink():
+                raise AssessmentError("workspace must not be a symlink")
+            self.workspace = requested.resolve(strict=True)
             if not self.workspace.is_dir():
                 raise AssessmentError("workspace must be an existing directory")
+        except AssessmentError:
+            raise
         except (OSError, TypeError, ValueError) as exc:
             raise AssessmentError("workspace must be an existing directory") from exc
         self._directory = self.workspace / "assessment"
@@ -488,6 +501,10 @@ class AssessmentStore:
             raise AssessmentError("Unknown assessment action")
         if not isinstance(payload, dict):
             raise AssessmentError("payload must be an object")
+        if action == "scenario_catalog":
+            from decepticon.sandbox_kernel.threat_scenarios import list_scenarios
+
+            return list_scenarios()
         expected = payload.get("expected_revision")
         if expected is not None:
             expected = _integer(expected, "expected_revision", 0)
@@ -572,6 +589,8 @@ class AssessmentStore:
                     result = self._report(db, state, payload, action)
                 elif action == "record":
                     result = self._record(state, payload)
+                elif action in {"evaluate_scenario", "prioritize_kev"}:
+                    result = self._evaluate_threat(state, payload, action)
                 elif action == "check_headers":
                     result = self._check_headers(state, payload)
                 if before != _dump(state):
@@ -793,7 +812,9 @@ class AssessmentStore:
             "total_cases": len(state["cases"]),
         }
 
-    def _evidence(self, value: Any, capture: bool = False) -> tuple[dict[str, Any], bytes]:
+    def _evidence(
+        self, value: Any, capture: bool = False, capture_limit: int = 2 * 1024 * 1024
+    ) -> tuple[dict[str, Any], bytes]:
         path = _relative_path(value)
         candidate = os.path.normpath(os.path.join(str(self.workspace), str(path)))
         if not candidate.startswith(str(self.workspace).rstrip(os.sep) + os.sep):
@@ -820,8 +841,10 @@ class AssessmentStore:
                         before = os.fstat(descriptor)
                         if not stat.S_ISREG(before.st_mode) or not before.st_size:
                             raise AssessmentError("Evidence must be a nonempty regular file")
-                        if capture and before.st_size > 2 * 1024 * 1024:
-                            raise AssessmentError("HTTP response artifacts must be at most 2 MiB")
+                        if capture and before.st_size > capture_limit:
+                            raise AssessmentError(
+                                f"Captured artifacts must be at most {capture_limit // (1024 * 1024)} MiB"
+                            )
                         stream = os.fdopen(descriptor, "rb")
                     except BaseException:
                         os.close(descriptor)
@@ -834,9 +857,9 @@ class AssessmentStore:
                             size += len(chunk)
                             digest.update(chunk)
                             if capture:
-                                if size > 2 * 1024 * 1024:
+                                if size > capture_limit:
                                     raise AssessmentError(
-                                        "HTTP response artifacts must be at most 2 MiB"
+                                        f"Captured artifacts must be at most {capture_limit // (1024 * 1024)} MiB"
                                     )
                                 chunks.append(chunk)
                         after = os.fstat(stream.fileno())
@@ -862,6 +885,48 @@ class AssessmentStore:
             raise AssessmentError(
                 f"Evidence {str(path)!r} is unreadable, missing, or symlinked"
             ) from exc
+
+    def _evaluate_threat(
+        self, state: dict[str, Any], payload: dict[str, Any], action: str
+    ) -> dict[str, Any]:
+        from decepticon.sandbox_kernel.kev import KEVInputError, prioritize_kev
+        from decepticon.sandbox_kernel.threat_scenarios import ScenarioInputError, evaluate_scenario
+
+        path_key = "evidence_path" if action == "evaluate_scenario" else "observation_path"
+        capture_limit = (16 if action == "prioritize_kev" else 2) * 1024 * 1024
+        evidence, content = self._evidence(
+            payload.get(path_key), capture=True, capture_limit=capture_limit
+        )
+        artifact = _json_object(content)
+        try:
+            host = _host(urlsplit(_text(artifact.get("asset"), "asset", 8192)).hostname)
+        except (ValueError, UnicodeError) as exc:
+            raise AssessmentError("Threat artifact asset is invalid") from exc
+        if _in_scope(host, state["denied_hosts"]):
+            raise AssessmentError("Threat artifact asset is excluded by denied_hosts")
+        if not _in_scope(host, state["allowed_hosts"]):
+            raise AssessmentError("Threat artifact asset is outside allowed_hosts")
+        references = [evidence]
+        try:
+            if action == "prioritize_kev":
+                catalog_evidence, catalog_content = self._evidence(
+                    payload.get("catalog_path"), capture=True, capture_limit=capture_limit
+                )
+                references.insert(0, catalog_evidence)
+                result = prioritize_kev(_json_object(catalog_content), artifact)
+                records = result.pop("records")
+                result["priority_counts"] = {
+                    priority: sum(record["priority"] == priority for record in records)
+                    for priority in ("urgent", "investigate", "normal", "not_applicable")
+                }
+                result.update(_page(records, payload, "records"))
+            else:
+                result = evaluate_scenario(
+                    _text(payload.get("scenario_id"), "scenario_id", 128), artifact
+                )
+        except (ScenarioInputError, KEVInputError) as exc:
+            raise AssessmentError(f"Threat artifact rejected: {exc}") from exc
+        return result | {"evidence": references, "baseline_coverage_updated": False}
 
     def _case(self, state: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
         case_id = _text(payload.get("case_id"), "case_id", 100)
