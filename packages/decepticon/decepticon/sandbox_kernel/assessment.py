@@ -795,6 +795,9 @@ class AssessmentStore:
 
     def _evidence(self, value: Any, capture: bool = False) -> tuple[dict[str, Any], bytes]:
         path = _relative_path(value)
+        candidate = os.path.normpath(os.path.join(str(self.workspace), str(path)))
+        if not candidate.startswith(str(self.workspace).rstrip(os.sep) + os.sep):
+            raise AssessmentError("Evidence path escapes the engagement workspace")
         if os.open not in os.supports_dir_fd or not all(
             hasattr(os, flag) for flag in ("O_NOFOLLOW", "O_DIRECTORY")
         ):
@@ -809,7 +812,7 @@ class AssessmentStore:
                     for part in path.parts[:-1]:
                         parent = directories.enter_context(_evidence_directory(parent, part))
                     descriptor = os.open(
-                        os.path.basename(path.name),
+                        os.path.basename(candidate),
                         os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
                         dir_fd=parent,
                     )
@@ -819,20 +822,24 @@ class AssessmentStore:
                             raise AssessmentError("Evidence must be a nonempty regular file")
                         if capture and before.st_size > 2 * 1024 * 1024:
                             raise AssessmentError("HTTP response artifacts must be at most 2 MiB")
+                        stream = os.fdopen(descriptor, "rb")
+                    except BaseException:
+                        os.close(descriptor)
+                        raise
+                    with stream:
                         digest = hashlib.sha256()
                         chunks = []
                         size = 0
-                        with os.fdopen(descriptor, "rb", closefd=False) as stream:
-                            while chunk := stream.read(1024 * 1024):
-                                size += len(chunk)
-                                digest.update(chunk)
-                                if capture:
-                                    if size > 2 * 1024 * 1024:
-                                        raise AssessmentError(
-                                            "HTTP response artifacts must be at most 2 MiB"
-                                        )
-                                    chunks.append(chunk)
-                        after = os.fstat(descriptor)
+                        while chunk := stream.read(1024 * 1024):
+                            size += len(chunk)
+                            digest.update(chunk)
+                            if capture:
+                                if size > 2 * 1024 * 1024:
+                                    raise AssessmentError(
+                                        "HTTP response artifacts must be at most 2 MiB"
+                                    )
+                                chunks.append(chunk)
+                        after = os.fstat(stream.fileno())
                         if size != before.st_size or any(
                             getattr(before, field) != getattr(after, field)
                             for field in (
@@ -849,8 +856,6 @@ class AssessmentStore:
                             "sha256": digest.hexdigest(),
                             "size_bytes": size,
                         }, b"".join(chunks)
-                    finally:
-                        os.close(descriptor)
             finally:
                 os.close(root)
         except OSError as exc:
