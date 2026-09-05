@@ -11,10 +11,12 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
+from urllib.parse import unquote
 
 import httpx
 from langchain_core.tools import tool
+from pydantic import Field
 
 from decepticon_core.utils.logging import get_logger
 
@@ -46,37 +48,103 @@ def _load_spec(source: str) -> tuple[dict[str, Any] | None, str]:
 
         # Try JSON first, then YAML-like
         try:
-            return json.loads(text), ""
+            data = json.loads(text)
         except json.JSONDecodeError:
             # Minimal YAML-like parsing for common OpenAPI specs
             # (avoids adding pyyaml dependency)
             try:
                 import yaml  # type: ignore[import-untyped]  # noqa: PLC0415
 
-                return yaml.safe_load(text), ""
             except ImportError:
                 return None, "Spec is YAML but pyyaml is not installed — convert to JSON"
-    except (httpx.HTTPError, OSError) as exc:
+            try:
+                data = yaml.safe_load(text)
+            except yaml.YAMLError as exc:
+                return None, f"Invalid YAML: {exc}"
+        if not isinstance(data, dict):
+            return None, "Spec root must be an object"
+        return data, ""
+    except (httpx.HTTPError, OSError, UnicodeError) as exc:
         return None, str(exc)
 
 
 # ── Spec parsing ─────────────────────────────────────────────────────────
 
 
-def _extract_endpoints(spec: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extract endpoints from an OpenAPI v2 or v3 spec."""
-    endpoints: list[dict[str, Any]] = []
-    paths = spec.get("paths") or {}
+class APISpecError(ValueError):
+    """An OpenAPI document has malformed inventory data."""
+
+
+def _require_object(value: Any, location: str) -> dict[str, Any]:
+    """Validate an object before inspecting its inventory fields."""
+    if not isinstance(value, dict):
+        raise APISpecError(f"{location} must be an object")
+    return value
+
+
+def parse_openapi_document(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return every OpenAPI v2/v3 operation without IO or input mutation.
+
+    Raises APISpecError for malformed document, path, or operation shapes.
+    The returned list is complete and unpaginated, in document order, with
+    the same endpoint fields exposed by api_parse_openapi. Only local JSON
+    Pointer references are resolved; external metadata is not fetched.
+    """
+    spec = _require_object(spec, "Spec root")
+    for field in ("info", "components", "webhooks"):
+        _require_object(spec.get(field, {}), field)
+    paths = spec.get("paths")
+    version = spec.get("openapi", "")
+    if (
+        "paths" not in spec
+        and isinstance(version, str)
+        and re.match(r"3\.[1-9][0-9]*\.", version)
+        and ("components" in spec or "webhooks" in spec)
+    ):
+        paths = {}
+    paths = _require_object(paths, "paths")
+    _extract_auth({}, spec)
     base_path = spec.get("basePath", "")  # v2
+    if not isinstance(base_path, str):
+        raise APISpecError("basePath must be a string")
+    endpoints: list[dict[str, Any]] = []
 
     for path, methods in paths.items():
-        if not isinstance(methods, dict):
+        if not isinstance(path, str):
+            raise APISpecError("Path names must be strings")
+        if path.startswith("x-"):
             continue
+        if not path.startswith("/"):
+            raise APISpecError(f"Path {path!r} must start with '/'")
+        methods = _require_object(methods, f"Path {path!r}")
+        resolved_methods = _resolve_object(methods, spec, f"Path {path!r}")
+        methods = {
+            **(resolved_methods or {}),
+            **{key: value for key, value in methods.items() if key != "$ref"},
+        }
+        inherited = {"parameters": _merge_parameters(methods, {}, spec)}
         full_path = base_path + path if base_path else path
         for method, op in methods.items():
-            if method.lower() in ("get", "post", "put", "patch", "delete", "head", "options"):
-                if not isinstance(op, dict):
-                    continue
+            if not isinstance(method, str):
+                raise APISpecError(f"Path {path!r} field names must be strings")
+            if method.lower() in (
+                "get",
+                "post",
+                "put",
+                "patch",
+                "delete",
+                "head",
+                "options",
+                "trace",
+            ):
+                op = _require_object(op, f"Operation {method.upper()} {path}")
+                for field in ("operationId", "summary"):
+                    if not isinstance(op.get(field, ""), str):
+                        raise APISpecError(f"Operation {field} must be a string")
+                tags = op.get("tags", [])
+                if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+                    raise APISpecError("Operation tags must be an array of strings")
+                op = {**op, "parameters": _merge_parameters(inherited, op, spec)}
                 params = _extract_params(op, spec)
                 auth = _extract_auth(op, spec)
                 endpoints.append(
@@ -85,14 +153,51 @@ def _extract_endpoints(spec: dict[str, Any]) -> list[dict[str, Any]]:
                         "method": method.upper(),
                         "operation_id": op.get("operationId", ""),
                         "summary": str(op.get("summary", ""))[:200],
-                        "tags": op.get("tags", []),
+                        "tags": list(tags),
                         "parameters": params,
                         "auth_required": auth,
-                        "request_body": _extract_request_body(op),
+                        "request_body": _extract_request_body(op, spec),
                         "response_properties": _extract_response_properties(op, spec),
                     }
                 )
     return endpoints
+
+
+def _extract_endpoints(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract endpoints through the reusable, IO-free document parser."""
+    return parse_openapi_document(spec)
+
+
+def _merge_parameters(
+    path_item: dict[str, Any], op: dict[str, Any], spec: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Merge inherited parameters, replacing operation-level (name, in) matches."""
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for owner in (path_item, op):
+        parameters = owner.get("parameters", [])
+        if not isinstance(parameters, list):
+            raise APISpecError("parameters must be an array")
+        seen: set[tuple[str, str]] = set()
+        for parameter in parameters:
+            parameter = _resolve_object(parameter, spec, "Parameter")
+            if parameter is None:
+                continue
+            name, location = parameter.get("name"), parameter.get("in")
+            if (
+                not isinstance(name, str)
+                or not name
+                or not isinstance(location, str)
+                or not location
+            ):
+                raise APISpecError("Parameters must have nonempty string name and in fields")
+            if not isinstance(parameter.get("required", False), bool):
+                raise APISpecError("Parameter required must be a boolean")
+            key = (name, location)
+            if key in seen:
+                raise APISpecError(f"Duplicate parameter {name!r} in {location!r}")
+            seen.add(key)
+            merged[key] = parameter
+    return list(merged.values())
 
 
 def _extract_params(op: dict[str, Any], spec: dict[str, Any]) -> list[dict[str, Any]]:
@@ -115,81 +220,150 @@ def _extract_params(op: dict[str, Any], spec: dict[str, Any]) -> list[dict[str, 
 def _param_type(p: dict[str, Any]) -> str:
     """Get parameter type string."""
     if "schema" in p:
-        schema = p["schema"]
+        schema = _require_object(p["schema"], "Parameter schema")
         return str(schema.get("type", schema.get("$ref", "object")))
     return str(p.get("type", "string"))
 
 
 def _extract_auth(op: dict[str, Any], spec: dict[str, Any]) -> list[str]:
-    """Extract auth requirements for an operation."""
-    security = op.get("security") or spec.get("security") or []
+    """Extract auth requirements, respecting explicit operation overrides."""
+    security = op["security"] if "security" in op else spec.get("security", [])
+    if not isinstance(security, list):
+        raise APISpecError("security must be an array")
     schemes: list[str] = []
     for sec in security:
-        if isinstance(sec, dict):
-            schemes.extend(sec.keys())
+        sec = _require_object(sec, "security requirement")
+        for name, scopes in sec.items():
+            if not isinstance(name, str) or not isinstance(scopes, list):
+                raise APISpecError("security requirements must map scheme names to scope arrays")
+            if not all(isinstance(scope, str) for scope in scopes):
+                raise APISpecError("security scopes must be strings")
+            schemes.append(name)
     return schemes
 
 
-def _extract_request_body(op: dict[str, Any]) -> dict[str, Any] | None:
-    """Extract request body schema (v3) or body parameter (v2)."""
-    rb = op.get("requestBody")
-    if rb and isinstance(rb, dict):
-        content = rb.get("content", {})
-        for ct, schema_info in content.items():
-            if isinstance(schema_info, dict):
+def _extract_request_body(op: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract request body schema (v3) or inherited body parameter (v2)."""
+    if "requestBody" in op:
+        rb = _resolve_object(op["requestBody"], spec, "requestBody")
+        if rb is not None:
+            if not isinstance(rb.get("required", False), bool):
+                raise APISpecError("requestBody required must be a boolean")
+            content = _require_object(rb.get("content", {}), "requestBody content")
+            for ct, schema_info in content.items():
+                schema_info = _require_object(schema_info, "requestBody media type")
+                schema = (
+                    _resolve_object(schema_info.get("schema", {}), spec, "requestBody schema") or {}
+                )
+                props = _require_object(schema.get("properties", {}), "requestBody properties")
                 return {
                     "content_type": ct,
                     "required": rb.get("required", False),
-                    "schema_type": schema_info.get("schema", {}).get("type", "object"),
-                    "properties": list(schema_info.get("schema", {}).get("properties", {}).keys())[
-                        :20
-                    ],
+                    "schema_type": schema.get("type", "object"),
+                    "properties": list(props.keys())[:20],
                 }
     # v2 body param
     for p in op.get("parameters", []):
         if p.get("in") == "body" and "schema" in p:
+            schema = _resolve_object(p["schema"], spec, "Body parameter schema") or {}
+            props = _require_object(schema.get("properties", {}), "Body parameter properties")
             return {
                 "content_type": "application/json",
                 "required": p.get("required", False),
-                "schema_type": p["schema"].get("type", "object"),
-                "properties": list(p["schema"].get("properties", {}).keys())[:20],
+                "schema_type": schema.get("type", "object"),
+                "properties": list(props.keys())[:20],
             }
     return None
 
 
 def _resolve_ref(ref: str, spec: dict[str, Any]) -> dict[str, Any] | None:
-    """Resolve a $ref pointer (shallow, single-level)."""
-    parts = ref.lstrip("#/").split("/")
+    """Resolve one local JSON Pointer without fetching external references."""
+    if not isinstance(ref, str) or not ref.startswith("#"):
+        return None
+    if ref == "#":
+        return spec
+    fragment = ref[1:]
+    if re.search(r"%(?![0-9a-fA-F]{2})", fragment):
+        return None
+    try:
+        pointer = unquote(fragment, errors="strict")
+    except UnicodeError:
+        return None
+    if not pointer.startswith("/"):
+        return None
     obj: Any = spec
-    for part in parts:
+    for token in pointer[1:].split("/"):
+        if re.search(r"~(?:[^01]|$)", token):
+            return None
+        part = token.replace("~1", "/").replace("~0", "~")
         if isinstance(obj, dict):
             obj = obj.get(part)
+        elif isinstance(obj, list) and re.fullmatch(r"0|[1-9][0-9]*", part):
+            try:
+                index = int(part)
+            except ValueError:
+                return None
+            obj = obj[index] if index < len(obj) else None
         else:
             return None
     return obj if isinstance(obj, dict) else None
 
 
+def _resolve_object(value: Any, spec: dict[str, Any], location: str) -> dict[str, Any] | None:
+    """Resolve local reference chains, rejecting broken or cyclic pointers.
+
+    External references remain unresolved; callers omit unavailable metadata
+    rather than fetching it or inventing parameters or operations.
+    """
+    obj = _require_object(value, location)
+    seen: set[int] = set()
+    overrides: dict[str, Any] = {}
+    while "$ref" in obj:
+        if id(obj) in seen:
+            raise APISpecError(f"{location} has a cyclic $ref")
+        seen.add(id(obj))
+        ref = obj["$ref"]
+        if not isinstance(ref, str) or not ref:
+            raise APISpecError(f"{location} $ref must be a nonempty string")
+        if not ref.startswith("#"):
+            return None
+        overrides = {**{key: value for key, value in obj.items() if key != "$ref"}, **overrides}
+        resolved = _resolve_ref(ref, spec)
+        if resolved is None:
+            raise APISpecError(f"{location} has an invalid or unresolved local $ref: {ref}")
+        obj = resolved
+    return {**obj, **overrides}
+
+
 def _extract_response_properties(op: dict[str, Any], spec: dict[str, Any]) -> list[str]:
     """Extract response schema property names for the 200 response."""
-    responses = op.get("responses", {})
-    ok_resp = responses.get("200") or responses.get(200) or responses.get("201") or {}
-    if "$ref" in ok_resp:
-        ok_resp = _resolve_ref(ok_resp["$ref"], spec) or ok_resp
+    responses = _require_object(op.get("responses", {}), "responses")
+    for code, response in responses.items():
+        if isinstance(code, str) and code.startswith("x-"):
+            continue
+        _require_object(response, "Response")
+    ok_resp = (
+        responses.get("200")
+        or responses.get(200)
+        or responses.get("201")
+        or responses.get(201)
+        or {}
+    )
+    ok_resp = _resolve_object(ok_resp, spec, "Response") or {}
     # OpenAPI v3: content -> application/json -> schema -> properties
-    content = ok_resp.get("content", {})
+    content = _require_object(ok_resp.get("content", {}), "Response content")
     for ct, media in content.items():
-        if "json" in ct and isinstance(media, dict):
-            schema = media.get("schema", {})
-            if "$ref" in schema:
-                schema = _resolve_ref(schema["$ref"], spec) or schema
-            props = schema.get("properties", {})
+        if not isinstance(ct, str):
+            raise APISpecError("Response content types must be strings")
+        media = _require_object(media, "Response media type")
+        if "json" in ct:
+            schema = _resolve_object(media.get("schema", {}), spec, "Response schema") or {}
+            props = _require_object(schema.get("properties", {}), "Response properties")
             if props:
                 return list(props.keys())[:30]
     # OpenAPI v2: schema -> properties
-    schema = ok_resp.get("schema", {})
-    if "$ref" in schema:
-        schema = _resolve_ref(schema["$ref"], spec) or schema
-    props = schema.get("properties", {})
+    schema = _resolve_object(ok_resp.get("schema", {}), spec, "Response schema") or {}
+    props = _require_object(schema.get("properties", {}), "Response properties")
     if props:
         return list(props.keys())[:30]
     return []
@@ -272,24 +446,48 @@ def _json(data: Any) -> str:
     return json.dumps(data, indent=2, default=str)
 
 
+def _inventory_page(
+    items: list[dict[str, Any]], key: str, offset: int, limit: int
+) -> dict[str, Any]:
+    """Return one bounded inventory page with continuation metadata."""
+    page = items[offset : offset + limit]
+    next_offset = offset + len(page)
+    has_more = next_offset < len(items)
+    return {
+        key: page,
+        "returned_count": len(page),
+        "next_offset": next_offset if has_more else None,
+        "has_more": has_more,
+    }
+
+
 # ── @tool wrappers ───────────────────────────────────────────────────────
 
 
 @tool
-def api_parse_openapi(spec_source: str) -> str:
-    """Parse an OpenAPI/Swagger spec and return all endpoints.
+def api_parse_openapi(
+    spec_source: str,
+    offset: Annotated[int, Field(strict=True, ge=0)] = 0,
+    limit: Annotated[int, Field(strict=True, ge=1, le=1000)] = 100,
+) -> str:
+    """Parse an OpenAPI/Swagger spec and return a page of endpoints.
 
     Accepts a file path or URL to an OpenAPI v2 (Swagger) or v3 spec
-    (JSON or YAML). Returns all endpoints with methods, parameters,
-    auth requirements, and request body schemas. Use the output to
-    understand the API surface before testing.
+    (JSON or YAML). Returns endpoints with methods, parameters,
+    auth requirements, and request body schemas. Offset must be a
+    nonnegative integer and limit an integer from 1 to 1000 (default 100).
+    Totals cover the full inventory; use next_offset while has_more is true
+    to retrieve subsequent pages and understand the complete API surface.
     """
     spec, error = _load_spec(spec_source)
     if spec is None:
         return _json({"error": "spec_load_failed", "detail": error})
 
+    try:
+        endpoints = parse_openapi_document(spec)
+    except APISpecError as exc:
+        return _json({"error": "spec_parse_failed", "detail": str(exc)})
     info = spec.get("info", {})
-    endpoints = _extract_endpoints(spec)
 
     return _json(
         {
@@ -297,13 +495,17 @@ def api_parse_openapi(spec_source: str) -> str:
             "version": info.get("version", ""),
             "openapi_version": spec.get("openapi", spec.get("swagger", "")),
             "total_endpoints": len(endpoints),
-            "endpoints": endpoints[:100],
+            **_inventory_page(endpoints, "endpoints", offset, limit),
         }
     )
 
 
 @tool
-def api_generate_test_matrix(spec_source: str) -> str:
+def api_generate_test_matrix(
+    spec_source: str,
+    offset: Annotated[int, Field(strict=True, ge=0)] = 0,
+    limit: Annotated[int, Field(strict=True, ge=1, le=1000)] = 100,
+) -> str:
     """Generate a security test matrix from an OpenAPI spec.
 
     Analyses the spec and generates test cases for:
@@ -312,13 +514,19 @@ def api_generate_test_matrix(spec_source: str) -> str:
     - **Auth bypass**: endpoints with/without auth → enforcement testing
     - **Missing auth**: state-changing endpoints without auth requirements
 
-    Returns ranked test cases with descriptions and severity.
+    Returns a page of ranked test cases with descriptions and severity.
+    Offset must be a nonnegative integer and limit an integer from 1 to 1000
+    (default 100). Counts cover the full matrix; follow next_offset while
+    has_more is true to retrieve the remaining tests.
     """
     spec, error = _load_spec(spec_source)
     if spec is None:
         return _json({"error": "spec_load_failed", "detail": error})
 
-    endpoints = _extract_endpoints(spec)
+    try:
+        endpoints = parse_openapi_document(spec)
+    except APISpecError as exc:
+        return _json({"error": "spec_parse_failed", "detail": str(exc)})
     bola = _generate_bola_tests(endpoints)
     mass_assign = _generate_mass_assignment_tests(endpoints)
     auth = _generate_auth_tests(endpoints)
@@ -336,7 +544,7 @@ def api_generate_test_matrix(spec_source: str) -> str:
                 "mass_assignment": len(mass_assign),
                 "auth_bypass": len(auth),
             },
-            "tests": all_tests[:100],
+            **_inventory_page(all_tests, "tests", offset, limit),
         }
     )
 
