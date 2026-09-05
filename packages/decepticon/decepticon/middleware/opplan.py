@@ -128,8 +128,9 @@ a stable, sorted, human-readable JSON document with a `schema_version`, a
   Use when abandoning a hierarchical task so the parent can then be moved
   to COMPLETED or CANCELLED itself.
 
-- **`load_opplan`** — Hydrate agent state from an existing `plan/opplan.json`.
-  Call on session startup if the engagement already has an OPPLAN file.
+- **`load_opplan`** — Bind the active workspace and hydrate state from an
+  existing `plan/opplan.json`. Call before filesystem bootstrap. A missing file
+  still binds the workspace so a new engagement can create its planning files.
 
 ### Concurrency rule
 
@@ -161,7 +162,11 @@ blocked → in-progress                 (retry with different approach)
 - NEVER call `update_objective` without calling `get_objective` first
 - NEVER call OPPLAN tools in parallel (one tool per model step)
 - ALWAYS include evidence when marking COMPLETED
-- ALWAYS include failure reason and attempts when marking BLOCKED
+- ALWAYS include failure reason and attempts when marking BLOCKED — and note
+  that BLOCKED is mechanically gated: the notes must cite evidence (an exit
+  artifact such as exploit/EXIT_REPORT.md or recon/SUMMARY.md, a differential
+  matrix for reachability/WAF claims, a liveness verdict, or an operator/scope
+  adjudication). Evidence-free blocks are rejected by the tool.
 - ALWAYS set owner to the sub-agent name before delegating (recon/exploit/postexploit)
 - ALWAYS respect blocked_by dependencies and kill chain phase order
 """
