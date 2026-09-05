@@ -25,6 +25,27 @@ def _inject_client(sb: HTTPSandbox, handler: Any) -> None:
     )
 
 
+def test_assessment_transport_preserves_workspace_and_pagination() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/assessment"
+        assert json.loads(request.content) == {
+            "action": "inventory",
+            "payload": {"offset": 100, "limit": 20},
+            "workspace_path": "/workspace/client-one",
+        }
+        return httpx.Response(200, json={"total": 120, "next_offset": None})
+
+    sandbox = HTTPSandbox(base_url="http://sandbox.test")
+    _inject_client(sandbox, handler)
+    try:
+        result = sandbox.assessment(
+            "inventory", {"offset": 100, "limit": 20}, workspace_path="/workspace/client-one"
+        )
+        assert result == {"total": 120, "next_offset": None}
+    finally:
+        sandbox.close()
+
+
 def test_id_property_strips_trailing_slash() -> None:
     sb = HTTPSandbox(base_url="http://localhost:9999/")
     assert sb.id == "http-sandbox:http://localhost:9999"

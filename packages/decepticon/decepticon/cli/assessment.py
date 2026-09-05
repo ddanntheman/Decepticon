@@ -1,0 +1,172 @@
+"""Run artifact-only web/API coverage assessments against an explicit local workspace."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sqlite3
+import stat
+import sys
+from hashlib import sha256
+from pathlib import Path
+from typing import Any
+
+from decepticon.assessment_import import (
+    MAX_IMPORT_BYTES,
+    AssessmentImportError,
+    prepare_import,
+    render_report,
+)
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="decepticon-cli assessment")
+    parser.add_argument("--workspace", required=True, type=Path)
+    parser.add_argument("--expected-revision", type=int)
+    commands = parser.add_subparsers(dest="action", required=True)
+    initialize = commands.add_parser("init", help="Initialize a scoped assessment baseline")
+    initialize.add_argument("--name", required=True)
+    initialize.add_argument("--scope", action="append", required=True)
+    initialize.add_argument(
+        "--exclude-host",
+        action="append",
+        default=[],
+        help="Excluded host, wildcard, or CIDR; repeatable",
+    )
+    initialize.add_argument(
+        "--profile", choices=["external", "authenticated", "source-assisted"], default="external"
+    )
+    initialize.add_argument("--require-role", action="append")
+    initialize.add_argument("--role", action="append", default=[])
+    initialize.add_argument("--source-available", action="store_true")
+    for kind in ("openapi", "traffic", "observations", "source-status"):
+        command = commands.add_parser(
+            f"import-{kind}", help="Import an explicit local JSON/YAML artifact"
+        )
+        command.add_argument("path")
+        command.add_argument("--source-id")
+        if kind in {"openapi", "observations"}:
+            command.add_argument("--base-url", required=kind == "openapi", default="")
+        else:
+            command.set_defaults(base_url="")
+    access = commands.add_parser(
+        "access", help="Set the roles and source material currently available"
+    )
+    access.add_argument("--role", action="append", default=[])
+    access.add_argument("--source-available", action="store_true")
+    record = commands.add_parser(
+        "record", help="Record an explicit evidence-backed reviewer attestation"
+    )
+    record.add_argument("--case", required=True)
+    record.add_argument(
+        "--status",
+        required=True,
+        choices=["pass", "fail", "blocked", "inconclusive", "not_applicable"],
+    )
+    record.add_argument(
+        "--evidence",
+        action="append",
+        default=[],
+        help="Workspace-relative evidence path; repeatable",
+    )
+    record.add_argument("--rationale", required=True)
+    headers = commands.add_parser(
+        "check-headers", help="Evaluate a supplied response artifact without requests"
+    )
+    headers.add_argument("--case", required=True)
+    headers.add_argument(
+        "--evidence", required=True, help="Workspace-relative JSON response artifact path"
+    )
+    for action in ("report", "gaps", "inventory", "next"):
+        command = commands.add_parser(action)
+        command.add_argument("--offset", type=int, default=0)
+        command.add_argument("--limit", type=int, default=50)
+        if action in {"report", "gaps"}:
+            command.add_argument("--format", choices=["json", "markdown"], default="json")
+            command.add_argument("--fail-on-gaps", action="store_true")
+    return parser
+
+
+def _read_artifact(value: str) -> tuple[Path, str]:
+    if value == "-" or "://" in value:
+        raise AssessmentImportError("Import requires an explicit local file, not a URL or stdin")
+    try:
+        path = Path(value).resolve(strict=True)
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NONBLOCK), "rb") as artifact:
+            metadata = os.fstat(artifact.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                raise AssessmentImportError("Artifact must be a regular local file")
+            if metadata.st_size > MAX_IMPORT_BYTES:
+                raise AssessmentImportError("Artifact exceeds the 16 MiB input limit")
+            content = artifact.read(MAX_IMPORT_BYTES + 1)
+        if len(content) > MAX_IMPORT_BYTES:
+            raise AssessmentImportError("Artifact exceeds the 16 MiB input limit")
+        return path, content.decode("utf-8-sig")
+    except UnicodeError:
+        raise AssessmentImportError("Artifact must contain valid UTF-8 text") from None
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, AssessmentImportError):
+            raise
+        raise AssessmentImportError(
+            "Artifact is missing, unreadable, or not a regular local file"
+        ) from None
+
+
+def _payload(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
+    action = args.action
+    if action == "init":
+        payload = {
+            "engagement_name": args.name,
+            "profile": args.profile,
+            "allowed_hosts": args.scope,
+            "denied_hosts": args.exclude_host,
+            "available_roles": args.role,
+            "source_available": args.source_available,
+        }
+        if args.require_role is not None:
+            payload["required_roles"] = args.require_role
+        return "initialize", payload
+    if action.startswith("import-"):
+        kind = action.removeprefix("import-")
+        path, content = _read_artifact(args.path)
+        source_id = args.source_id
+        if source_id is None:
+            source_id = f"{kind}:{sha256(str(path).encode('utf-8')).hexdigest()}"
+        return "import", prepare_import(kind, content, source_id, args.base_url)
+    if action == "access":
+        return action, {"available_roles": args.role, "source_available": args.source_available}
+    if action == "record":
+        return action, {
+            "case_id": args.case,
+            "status": args.status,
+            "evidence_paths": args.evidence,
+            "rationale": args.rationale,
+        }
+    if action == "check-headers":
+        return "check_headers", {"case_id": args.case, "evidence_path": args.evidence}
+    return action, {"offset": args.offset, "limit": args.limit}
+
+
+def main(argv: list[str] | None = None) -> int:
+    from decepticon.sandbox_kernel.assessment import AssessmentError, AssessmentStore
+
+    args = _parser().parse_args(argv)
+    markdown = getattr(args, "format", "json") == "markdown"
+    try:
+        action, payload = _payload(args)
+        if args.expected_revision is not None and action in {
+            "initialize",
+            "import",
+            "access",
+            "record",
+            "check_headers",
+        }:
+            payload["expected_revision"] = args.expected_revision
+        result = AssessmentStore(args.workspace).dispatch(action, payload)
+        output = render_report(result) if markdown else json.dumps(result, indent=2)
+    except (AssessmentError, AssessmentImportError, OSError, sqlite3.Error) as exc:
+        print(f"Assessment failed: {exc}", file=sys.stderr)
+        return 2
+    print(output, end="" if markdown else "\n")
+    return int(bool(getattr(args, "fail_on_gaps", False)) and result.get("complete") is not True)

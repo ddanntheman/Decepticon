@@ -53,7 +53,7 @@ import logging
 import os
 import re
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from deepagents.backends.protocol import (
@@ -340,6 +340,24 @@ class HTTPSandbox(BaseSandbox):
     # etc. The HTTP transport adds <1ms of overhead on loopback compared
     # to docker-exec; the tmux session state itself lives on the daemon
     # side where TmuxSessionManager always lived.
+
+    def assessment(
+        self,
+        action: str,
+        payload: dict[str, Any],
+        *,
+        workspace_path: str,
+    ) -> dict[str, Any]:
+        """Read or update the sandbox's durable, artifact-only assessment ledger."""
+        response = self._request(
+            "post",
+            "/assessment",
+            json={"action": action, "payload": payload, "workspace_path": workspace_path},
+        )
+        result = response.json()
+        if not isinstance(result, dict):
+            raise SandboxError("Assessment endpoint returned a non-object response")
+        return result
 
     def execute_tmux(
         self,

@@ -66,6 +66,7 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
+from decepticon.tools.assessment import ASSESSMENT_TOOLS
 from decepticon.tools.defense.vaccine import VACCINE_TOOLS
 from decepticon.tools.interaction import request_scope_amendment
 from decepticon.tools.research.cart import CART_TOOLS
@@ -188,6 +189,7 @@ def create_decepticon_agent(
         from decepticon.tools.ops import OPS_TOOLS, ops_available
 
         orchestrator_tools = [
+            *ASSESSMENT_TOOLS,
             *ENGAGEMENT_INTEL_TOOLS,
             *VACCINE_TOOLS,
             *CONSENSUS_TOOLS,

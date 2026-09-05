@@ -10,10 +10,13 @@ Operating modes
 - **Live**: a source is queried over its public API when its credentials
   are present in the environment (``SHODAN_API_KEY``,
   ``CENSYS_API_ID`` + ``CENSYS_API_SECRET``, ``ZOOMEYE_API_KEY``).
-- **Mock**: when *no* source credentials are configured the tool falls
-  back to a local mock catalog so the agent can develop and test offline.
-  The catalog is deterministic (derived from the domain) and may be
-  overridden with a JSON file via ``DECEPTICON_OSINT_CATALOG``.
+  Missing credentials, failures, and empty responses yield explicit
+  statuses without fabricated observations.
+- **Mock (development only)**: ``DECEPTICON_OSINT_ALLOW_MOCK`` must be
+  ``1``, ``true``, ``yes``, or ``on`` (case-insensitive, whitespace ignored)
+  to allow fallback when no live source succeeds. These synthetic findings
+  have ``status=mock`` and are not usable as real evidence. The deterministic
+  catalog may be overridden with JSON via ``DECEPTICON_OSINT_CATALOG``.
 
 Scope safety
 ------------
@@ -33,6 +36,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -284,6 +288,15 @@ async def _fetch_zoomeye(
 # ── Local mock catalog ──────────────────────────────────────────────────
 
 
+def _mock_allowed() -> bool:
+    return os.environ.get("DECEPTICON_OSINT_ALLOW_MOCK", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _load_mock_catalog(domain: str) -> dict[str, list[Any]]:
     """Return mock findings for ``domain``.
 
@@ -291,6 +304,9 @@ def _load_mock_catalog(domain: str) -> dict[str, list[Any]]:
     up there (the file maps ``domain -> findings``); otherwise synthesize a
     deterministic catalog from the domain so output is stable across runs.
     """
+    if not _mock_allowed():
+        return _new_findings()
+
     catalog_path = os.environ.get("DECEPTICON_OSINT_CATALOG", "").strip()
     if catalog_path:
         try:
@@ -300,8 +316,8 @@ def _load_mock_catalog(domain: str) -> dict[str, list[Any]]:
                 merged = _new_findings()
                 _merge_findings(merged, entry)
                 return merged
-        except (OSError, json.JSONDecodeError, AttributeError) as e:
-            log.warning("osint mock catalog %s unusable: %s", catalog_path, e)
+        except (OSError, json.JSONDecodeError, AttributeError):
+            log.warning("osint mock catalog unusable; using synthetic development findings")
 
     digest = hashlib.sha256(domain.encode("utf-8")).hexdigest()
     return {
@@ -348,8 +364,9 @@ async def osint_enrich(domain: str) -> str:
 
     Live sources are queried only when their credentials are present
     (``SHODAN_API_KEY``, ``CENSYS_API_ID`` + ``CENSYS_API_SECRET``,
-    ``ZOOMEYE_API_KEY``). With no credentials configured the tool returns a
-    deterministic local mock catalog so it stays usable offline.
+    ``ZOOMEYE_API_KEY``). Missing or failed sources never fabricate evidence.
+    Development mock/catalog fallback requires ``DECEPTICON_OSINT_ALLOW_MOCK``
+    to be ``1``, ``true``, ``yes``, or ``on`` (case-insensitive, whitespace ignored).
 
     The target is checked against the engagement target-scope rules
     (``DECEPTICON_OSINT_SCOPE``); an out-of-scope target is refused before
@@ -360,33 +377,49 @@ async def osint_enrich(domain: str) -> str:
             e.g. ``"example.com"`` or ``"https://api.example.com:443/"``.
 
     Returns:
-        JSON object with ``domain``, ``in_scope``, ``sources`` (the sources
-        consulted, ``["mock"]`` offline), ``open_ports``, ``certificates``,
-        ``dns_records``, ``banners``, and an ``errors`` list when a live
-        source fails.
+        JSON object with ``domain``, ``in_scope``, ``sources`` (successful
+        sources, including empty responses), ``open_ports``, ``certificates``,
+        ``dns_records``, and ``banners``. Overall ``status`` is ``unavailable``
+        with no configured sources, ``error`` on rejection or all failures,
+        ``empty`` after successful empty responses, ``ok`` with real findings,
+        or ``mock`` for opt-in synthetic data. ``evidence_usable`` is true only
+        for ``ok``; mock data must never be used as real evidence.
+        ``source_status`` maps every provider to ``configured``, ``status``,
+        and a safe ``error`` on failure. Unqueried sources are ``unavailable``.
+        ``observed_at`` is the UTC enrichment time, not the upstream scan time.
+        ``errors``, when present, contains only sanitized strings.
     """
     target = _normalize_domain(domain)
-    if not target:
-        return _json({"error": "no domain provided"})
-
-    scope = _load_scope_patterns()
-    in_scope = _is_in_scope(target, scope)
-    log.info("osint_enrich target=%r scope_patterns=%d in_scope=%s", target, len(scope), in_scope)
-    if not in_scope:
-        log.warning("osint_enrich refused: %r is out of target scope %s", target, scope)
-        return _json(
-            {
-                "domain": target,
-                "in_scope": False,
-                "error": f"target {target!r} is out of scope",
-                "scope_patterns": scope,
-            }
-        )
-
     findings = _new_findings()
     errors: list[str] = []
     sources = _available_sources()
     used: list[str] = []
+    source_status: dict[str, dict[str, Any]] = {
+        name: {"configured": name in sources, "status": "unavailable"}
+        for name in ("shodan", "censys", "zoomeye")
+    }
+    result: dict[str, Any] = {
+        "domain": target,
+        "in_scope": False,
+        "sources": used,
+        "status": "error",
+        "source_status": source_status,
+        "observed_at": datetime.now(timezone.utc).isoformat(),
+        "evidence_usable": False,
+        **findings,
+    }
+    if not target:
+        error = "no domain provided"
+        return _json({**result, "error": error, "errors": [error]})
+
+    scope = _load_scope_patterns()
+    in_scope = _is_in_scope(target, scope)
+    result["in_scope"] = in_scope
+    log.info("osint_enrich target=%r scope_patterns=%d in_scope=%s", target, len(scope), in_scope)
+    if not in_scope:
+        log.warning("osint_enrich refused: %r is out of target scope %s", target, scope)
+        error = f"target {target!r} is out of scope"
+        return _json({**result, "error": error, "errors": [error], "scope_patterns": scope})
 
     if sources:
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
@@ -405,17 +438,38 @@ async def osint_enrich(domain: str) -> str:
                         part = await _fetch_zoomeye(client, target, os.environ["ZOOMEYE_API_KEY"])
                     _merge_findings(findings, part)
                     used.append(name)
+                    source_status[name]["status"] = (
+                        "ok" if any(part.get(key) for key in _FINDING_KEYS) else "empty"
+                    )
                     log.info("osint_enrich %s ok for %r", name, target)
                 except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as e:
-                    log.warning("osint_enrich %s failed for %r: %s", name, target, e)
-                    errors.append(f"{name}: {e}")
+                    if isinstance(e, httpx.HTTPStatusError):
+                        reason = f"HTTP {e.response.status_code}"
+                    elif isinstance(e, httpx.TimeoutException):
+                        reason = "request timed out"
+                    elif isinstance(e, httpx.HTTPError):
+                        reason = "request failed"
+                    else:
+                        reason = "invalid response"
+                    error = f"{name}: {reason}"
+                    source_status[name].update(status="error", error=error)
+                    log.warning("osint_enrich %s failed for %r: %s", name, target, reason)
+                    errors.append(error)
 
-    if not used:
+    if not used and _mock_allowed():
         _merge_findings(findings, _load_mock_catalog(target))
         used.append("mock")
+        source_status["mock"] = {"configured": True, "status": "mock"}
         log.info("osint_enrich using mock catalog for %r (no live sources)", target)
 
-    result: dict[str, Any] = {"domain": target, "in_scope": True, "sources": used, **findings}
+    if used == ["mock"]:
+        status = "mock"
+    elif used:
+        status = "ok" if any(findings.values()) else "empty"
+    else:
+        status = "error" if errors else "unavailable"
+
+    result.update(status=status, evidence_usable=status == "ok", **findings)
     if errors:
         result["errors"] = errors
     return _json(result)
