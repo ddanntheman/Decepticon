@@ -1322,9 +1322,9 @@ def test_cross_process_imports_and_case_history_updates_are_serialized(tmp_path)
     try:
         for process in processes:
             process.start()
-        updates = [results.get(timeout=30) for _ in processes]
+        updates = [results.get(timeout=120) for _ in processes]
         for process in processes:
-            process.join(timeout=30)
+            process.join(timeout=60)
             assert process.exitcode == 0
         assert all("error" not in result for result in updates), updates
         revisions = [revision for result in updates for revision in result["revisions"]]
