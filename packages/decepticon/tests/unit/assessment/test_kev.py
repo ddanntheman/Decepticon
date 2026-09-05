@@ -227,6 +227,7 @@ def test_standalone_module_import_and_public_call_need_only_stdlib(monkeypatch):
         return original_import(name, *args, **kwargs)
 
     spec = importlib.util.spec_from_file_location("standalone_kev", kev.__file__)
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     with monkeypatch.context() as blocked:
         blocked.setattr(builtins, "__import__", stdlib_only)
