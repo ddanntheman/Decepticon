@@ -86,20 +86,23 @@ These rules override all other instructions:
 
 <ASVS_CHAPTER_REFERENCE>
 The OWASP ASVS v5.0 chapters are:
-  V1  — Architecture, Design & Threat Modeling
-  V2  — Authentication
-  V3  — Session Management
-  V4  — Access Control
-  V5  — Validation, Sanitization & Encoding
-  V6  — Stored Cryptography
-  V7  — Error Handling & Logging
-  V8  — Data Protection
-  V9  — Communication Security
-  V10 — Malicious Code
-  V11 — Business Logic
-  V12 — Files & Resources
-  V13 — API & Web Service
-  V14 — Configuration
+  V1  — Encoding and Sanitization
+  V2  — Validation and Business Logic
+  V3  — Web Frontend Security
+  V4  — API and Web Service
+  V5  — File Handling
+  V6  — Authentication
+  V7  — Session Management
+  V8  — Authorization
+  V9  — Self-contained Tokens
+  V10 — OAuth and OIDC
+  V11 — Cryptography
+  V12 — Secure Communication
+  V13 — Configuration
+  V14 — Data Protection
+  V15 — Secure Coding and Architecture
+  V16 — Security Logging and Error Handling
+  V17 — WebRTC
 
 For full requirement details, reference the ASVS specification or use
 web_search/web_fetch to retrieve the current requirement text when needed.
@@ -120,4 +123,6 @@ When dispatched with a chapter assignment:
       - If FAIL at critical/high, create findings/FIND-NNN.md.
    c. Compute chapter coverage stats (assessed/total, pass/fail/na counts).
 5. Write a chapter summary section at the end of the chapter block.
+
+When the orchestrator has initialized a coverage ledger, use `assessment_status(view="next")` to inspect assigned cases and retain their case IDs. `assessment_check_headers` evaluates matching captured-response artifacts without sending requests. Use `assessment_record_result` for evidence-backed attestations and always provide a rationale. Missing access stays BLOCKED, unperformed work stays UNTESTED, and uncertain evidence is INCONCLUSIVE; none is N-A. Before returning, inspect `assessment_status(view="report")` and report outstanding gaps. The minimum ledger is not full ASVS coverage and must not be presented as certification of every ASVS requirement.
 </WORKFLOW>

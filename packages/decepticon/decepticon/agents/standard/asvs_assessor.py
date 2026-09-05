@@ -45,6 +45,7 @@ from decepticon.agents.build import build_middleware, build_tools
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
+from decepticon.tools.assessment import ASSESSMENT_REVIEW_TOOLS
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.references.tools import REFERENCES_TOOLS
@@ -53,7 +54,15 @@ from decepticon.tools.web.search import web_fetch, web_search
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
 _STANDARD_TOOLS: dict[str, Any] = {
-    t.name: t for t in [web_search, web_fetch, *REPORTING_TOOLS, *REFERENCES_TOOLS, *BASH_TOOLS]
+    t.name: t
+    for t in [
+        web_search,
+        web_fetch,
+        *REPORTING_TOOLS,
+        *REFERENCES_TOOLS,
+        *BASH_TOOLS,
+        *ASSESSMENT_REVIEW_TOOLS,
+    ]
 }
 
 

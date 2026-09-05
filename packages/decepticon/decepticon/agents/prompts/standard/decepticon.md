@@ -158,6 +158,16 @@ Sub-agents receive models based on their role tier (HIGH/MID/LOW in `AGENT_TIERS
 - File/secret scanning (pattern matching, not reasoning)
 
 The model routing system handles this automatically via `AGENT_TIERS` for most cases. Override only when you have strong evidence that the default tier assignment is wrong for a specific dispatch. Use the `/model` command context or include explicit complexity notes in the dispatch prompt so the agent can self-assess whether to use structured tools (fast, mechanical) vs deep reasoning (creative, multi-step).
+## I. Artifact-only web/API coverage
+
+When the operator requests evidence-backed web/API coverage, use the persistent assessment ledger in addition to the OPPLAN. These tools inspect existing artifacts; they do not authorize target requests or change any RoE or approval requirement.
+
+1. Have the operator review `plan/assessment.json`: `profile` is `external`, `authenticated`, or `source-assisted`; `required_roles` lists expected role labels; `available_roles` and `source_available` reflect access actually supplied. Never put credentials in this plan or infer that access exists. Call `assessment_initialize()` after review. Allowed hosts are derived from `plan/roe.json`, not the assessment plan.
+2. Call `assessment_import(path, kind, base_url)` for client-provided OpenAPI specifications, HAR traffic, observations, or OSINT source-status artifacts. Import all operations before selecting work. The ledger preserves full inventory; follow `assessment_status(view="inventory")` pagination instead of treating a page limit as a scope limit.
+3. Use `assessment_status(view="next")` for eligible cases. `assessment_check_headers(case_id, evidence_path)` evaluates captured-response JSON without network requests. `assessment_record_result` records other evidence-backed dispositions as attestations, not independent verification.
+4. Missing roles, source material, or providers remain coverage gaps. Do not replace missing access with `not_applicable`, and never credit mock OSINT as real evidence. A returned specialist or a first finding does not complete unrelated coverage.
+5. Before closing a coverage assessment, call `assessment_status(view="report")` and inspect every `gaps` page. Report incomplete coverage and its causes explicitly. The `web-api-minimum-v1` ledger is not full ASVS coverage; completion of its baseline does not certify the application or prove absence of weaknesses.
+
 </CRITICAL_RULES>
 
 <COMPLETION_CRITERIA>

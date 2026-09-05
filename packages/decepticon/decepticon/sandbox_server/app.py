@@ -43,8 +43,11 @@ import base64
 import hmac
 import logging
 import os
+import re
+import sqlite3
 from contextlib import asynccontextmanager
-from typing import Annotated, AsyncIterator
+from pathlib import Path, PurePosixPath
+from typing import Annotated, Any, AsyncIterator, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -156,6 +159,32 @@ class SessionLogDiffResponseModel(BaseModel):
 
 class SessionLogPathResponseModel(BaseModel):
     path: str
+
+
+class AssessmentRequest(BaseModel):
+    workspace_path: str
+    action: Literal[
+        "initialize",
+        "import",
+        "access",
+        "inventory",
+        "next",
+        "record",
+        "check_headers",
+        "report",
+        "gaps",
+    ]
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+def _assessment_workspace(workspace_path: str) -> Path:
+    if not re.fullmatch(r"/workspace(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})*", workspace_path):
+        raise HTTPException(status_code=422, detail="Invalid assessment workspace")
+    root = Path(os.environ.get("SANDBOX_ROOT_DIR", "/workspace")).resolve()
+    workspace = root.joinpath(*PurePosixPath(workspace_path).parts[2:]).resolve()
+    if not workspace.is_relative_to(root):
+        raise HTTPException(status_code=422, detail="Assessment workspace escapes sandbox root")
+    return workspace
 
 
 class ProvisionEgressRequest(BaseModel):
@@ -348,6 +377,31 @@ def download_files(
 
 
 # ── tmux / background surface ─────────────────────────────────────────
+
+
+@app.post("/assessment", response_model=dict)
+def assessment(
+    req: AssessmentRequest,
+    _: Annotated[None, Depends(auth)],
+) -> dict[str, Any]:
+    from decepticon.sandbox_kernel.assessment import (
+        AssessmentConflictError,
+        AssessmentError,
+        AssessmentStore,
+    )
+
+    workspace = _assessment_workspace(req.workspace_path)
+    try:
+        if req.action == "initialize":
+            workspace.mkdir(parents=True, exist_ok=True, mode=0o700)
+        return AssessmentStore(workspace).dispatch(req.action, req.payload)
+    except AssessmentConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AssessmentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (OSError, sqlite3.Error) as exc:
+        log.error("Assessment storage unavailable: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Assessment storage unavailable") from exc
 
 
 @app.post("/execute_tmux", response_model=ExecuteTmuxResponseModel)

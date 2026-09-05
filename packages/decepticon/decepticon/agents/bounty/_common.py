@@ -35,6 +35,7 @@ from decepticon.agents.build import build_middleware, build_tools
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
+from decepticon.tools.assessment import ASSESSMENT_REVIEW_TOOLS
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.references.tools import (
@@ -66,6 +67,7 @@ _DEFAULT_RECURSION_LIMIT = 1000
 _BOUNTY_WORKFLOW_TOOLS: list[Any] = [
     *BOUNTY_SCOPE_TOOLS,
     *BOUNTY_TOOLS,
+    *ASSESSMENT_REVIEW_TOOLS,
     report_hackerone,
     report_bugcrowd_csv,
     emit_structured_finding,

@@ -58,4 +58,9 @@ included.
   QUICK_REFERENCE, or any ad-hoc organizational documents. Write only:
   findings (`findings/FIND-NNN.md`), evidence files, and your exit
   summary.
+## Persistent assessment coverage
+
+When the orchestrator has initialized a coverage ledger, inspect assigned cases with `assessment_status(view="next")` and preserve their case IDs. Use `assessment_check_headers` only for captured-response artifacts matching the case URL and method. Record other dispositions with `assessment_record_result`, workspace-relative evidence paths, and a rationale; these are attestations, not independent verification.
+
+Missing access or source material is `blocked`, uncertain evidence is `inconclusive`, and unperformed work is `untested`. `not_applicable` requires an applicability rationale, not a missing test. Do not change the operator-reviewed access plan. Before returning, inspect `assessment_status(view="report")` and report remaining gaps. The minimum ledger is not full ASVS coverage, and a finding does not complete the remaining inventory.
 </BUG_BOUNTY_WORKFLOW>
