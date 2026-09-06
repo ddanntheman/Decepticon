@@ -442,6 +442,15 @@ class _FakeRequest:
         return _FakeRequest(system_message=system_message, overrides={"taken": True})
 
 
+def test_model_policy_distinguishes_assessment_requirements_from_grants() -> None:
+    middleware = SkillogyMiddleware(backend=_StubBackend(moc_response=[]))
+    request = middleware.wrap_model_call(_FakeRequest(system_message=None), lambda value: value)
+    policy = request.system_message.content[0]["text"]
+    assert "assessment_contract" in policy
+    assert "requirements, not grants" in policy
+    assert "assessment_capabilities" in policy
+
+
 class TestInject:
     def test_no_existing_system_message_creates_one_with_policy(self) -> None:
         mw = SkillogyMiddleware(backend=_StubBackend(moc_response=[]))
