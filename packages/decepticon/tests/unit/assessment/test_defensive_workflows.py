@@ -56,6 +56,41 @@ def capture(**overrides: Any) -> dict[str, Any]:
     } | overrides
 
 
+def test_artifact_descriptor_closes_when_stream_initialization_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    from decepticon.sandbox_kernel._workflow_storage import WorkflowStorage, WorkflowStorageError
+
+    path = artifact(tmp_path, capture())
+    storage = WorkflowStorage(tmp_path)
+    descriptors: list[int] = []
+    closed: set[int] = set()
+    original_close = os.close
+
+    def fail_open(descriptor: int, *args: Any, **kwargs: Any) -> Any:
+        descriptors.append(descriptor)
+        raise OSError("fixture stream initialization failure")
+
+    def close(descriptor: int) -> None:
+        closed.add(descriptor)
+        original_close(descriptor)
+
+    monkeypatch.setattr(os, "fdopen", fail_open)
+    monkeypatch.setattr(os, "close", close)
+    try:
+        with pytest.raises(WorkflowStorageError):
+            storage.read(path)
+        assert len(descriptors) == 1
+        with pytest.raises(OSError):
+            os.fstat(descriptors[0])
+    finally:
+        for descriptor in descriptors:
+            if descriptor not in closed:
+                original_close(descriptor)
+
+
 def test_capture_review_is_durable_redacted_and_separate_from_coverage(tmp_path: Path) -> None:
     path = artifact(tmp_path, capture())
     original = (tmp_path / path).read_bytes()
@@ -851,12 +886,14 @@ def test_tls_observation_pins_socket_preserves_sni_and_never_disables_validation
     class Context:
         check_hostname = True
         verify_mode = ssl.CERT_REQUIRED
+        minimum_version = ssl.TLSVersion.MINIMUM_SUPPORTED
 
         def wrap_socket(
             self, sock: Transport, *, server_hostname: str, do_handshake_on_connect: bool
         ) -> Transport:
             assert self.check_hostname is True
             assert self.verify_mode == ssl.CERT_REQUIRED
+            assert self.minimum_version == ssl.TLSVersion.TLSv1_2
             assert do_handshake_on_connect is False
             authorities.append(server_hostname)
             return sock
