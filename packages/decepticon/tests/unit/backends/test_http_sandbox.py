@@ -46,6 +46,52 @@ def test_assessment_transport_preserves_workspace_and_pagination() -> None:
         sandbox.close()
 
 
+def test_workflow_transport_preserves_explicit_artifact_and_workspace() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/workflows"
+        assert json.loads(request.content) == {
+            "action": "run",
+            "workspace_path": "/workspace/client-one",
+            "payload": {
+                "workflow_id": "http-capture-review",
+                "artifact_path": "capture.json",
+                "observe": False,
+            },
+        }
+        return httpx.Response(200, json={"status": "completed", "baseline_coverage_updated": False})
+
+    sandbox = HTTPSandbox(base_url="http://sandbox.test")
+    _inject_client(sandbox, handler)
+    try:
+        result = sandbox.workflow(
+            "run",
+            {
+                "workflow_id": "http-capture-review",
+                "artifact_path": "capture.json",
+                "observe": False,
+            },
+            workspace_path="/workspace/client-one",
+        )
+        assert result["baseline_coverage_updated"] is False
+    finally:
+        sandbox.close()
+
+
+def test_capability_transport_uses_a_fixed_probe_endpoint() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/capabilities"
+        assert request.url.params["probe"] == "true"
+        return httpx.Response(200, json={"schema_version": 1, "capabilities": []})
+
+    sandbox = HTTPSandbox(base_url="http://sandbox.test")
+    _inject_client(sandbox, handler)
+    try:
+        assert sandbox.capabilities(probe=True)["schema_version"] == 1
+    finally:
+        sandbox.close()
+
+
 def test_id_property_strips_trailing_slash() -> None:
     sb = HTTPSandbox(base_url="http://localhost:9999/")
     assert sb.id == "http-sandbox:http://localhost:9999"

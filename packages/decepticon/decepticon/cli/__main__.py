@@ -18,6 +18,7 @@ def _print_help() -> int:
         "Subcommands:\n"
         "  scan               Run a one-shot security scan and emit SARIF\n"
         "  assessment         Track web/API inventory and evidence-backed coverage\n"
+        "  workflows          Inspect capabilities and run bounded defensive workflows\n"
         "  auth               Show provider/auth configuration (API keys + subscriptions)\n\n"
         "  audit              Verify engagement audit ledgers\n"
         "  zip                Export/import engagement workspaces as ZIP archives\n\n"
@@ -39,6 +40,10 @@ def main(argv: list[str] | None = None) -> int:
         from decepticon.cli.assessment import main as assessment_main
 
         return assessment_main(rest)
+    if sub == "workflows":
+        from decepticon.cli.workflows import main as workflows_main
+
+        return workflows_main(rest)
     if sub == "scan":
         return scan_main(rest)
     if sub == "auth":

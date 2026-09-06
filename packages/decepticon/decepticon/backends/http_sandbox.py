@@ -341,6 +341,26 @@ class HTTPSandbox(BaseSandbox):
     # to docker-exec; the tmux session state itself lives on the daemon
     # side where TmuxSessionManager always lived.
 
+    def workflow(
+        self, action: str, payload: dict[str, Any], *, workspace_path: str
+    ) -> dict[str, Any]:
+        response = self._request(
+            "post",
+            "/workflows",
+            json={"action": action, "payload": payload, "workspace_path": workspace_path},
+        )
+        report = response.json()
+        if not isinstance(report, dict):
+            raise SandboxError("Workflow endpoint returned a non-object response")
+        return report
+
+    def capabilities(self, *, probe: bool = False) -> dict[str, Any]:
+        response = self._request("get", "/capabilities", params={"probe": probe})
+        report = response.json()
+        if not isinstance(report, dict):
+            raise SandboxError("Capability endpoint returned a non-object response")
+        return report
+
     def assessment(
         self,
         action: str,

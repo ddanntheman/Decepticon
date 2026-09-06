@@ -21,6 +21,28 @@ class LocalAssessmentSandbox:
             action, payload
         )
 
+    def capabilities(self, *, probe: bool = False) -> dict[str, Any]:
+        from decepticon.sandbox_kernel.capabilities import inspect_capabilities
+
+        return inspect_capabilities(probe=probe)
+
+    def workflow(
+        self, action: str, payload: dict[str, Any], *, workspace_path: str
+    ) -> dict[str, Any]:
+        from decepticon.sandbox_kernel.defensive_workflows import (
+            DefensiveWorkflowRunner,
+            workflow_catalog,
+        )
+
+        if action == "catalog":
+            return workflow_catalog()
+        parameters = dict(payload)
+        workflow_id = parameters.pop("workflow_id")
+        assert parameters["observe"] is False
+        return DefensiveWorkflowRunner(self.root / workspace_path.removeprefix("/workspace/")).run(
+            workflow_id, parameters
+        )
+
     def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         return [
             FileDownloadResponse(
@@ -97,6 +119,47 @@ def assessment_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple
     state = {"engagement_name": "client-one", "workspace_path": "/workspace/client-one"}
     module.assessment_initialize.invoke({"state": state})
     return module, state, workspace
+
+
+def test_defensive_workflow_tools_are_artifact_only_and_scope_bound(assessment_context) -> None:
+    from datetime import datetime, timezone
+
+    from decepticon.middleware.untrusted_output import UNTRUSTED_TOOL_NAMES
+
+    module, state, workspace = assessment_context
+    capture = {
+        "source": "capture",
+        "url": "https://app.example.test/",
+        "method": "GET",
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "status_code": 200,
+        "headers": {"X-Content-Type-Options": "nosniff"},
+    }
+    (workspace / "capture.json").write_text(json.dumps(capture))
+    assert (
+        len(json.loads(module.assessment_capabilities.invoke({"state": state}))["capabilities"])
+        == 5
+    )
+    assert (
+        len(json.loads(module.assessment_workflow_catalog.invoke({"state": state}))["workflows"])
+        == 5
+    )
+    arguments = {
+        "state": state,
+        "workflow_id": "http-capture-review",
+        "url": capture["url"],
+        "artifact_path": "capture.json",
+        "observe": True,
+    }
+    result = json.loads(module.assessment_run_workflow.invoke(arguments))
+    assert result["mode"] == "supplied_artifact"
+    assert result["baseline_coverage_updated"] is False
+    assert "observe" not in module.assessment_run_workflow.args
+    with pytest.raises(module.AssessmentToolError, match="scope"):
+        module.assessment_run_workflow.invoke(arguments | {"url": "https://excluded.example.test/"})
+    names = {"assessment_capabilities", "assessment_workflow_catalog", "assessment_run_workflow"}
+    assert names <= UNTRUSTED_TOOL_NAMES
+    assert names <= {tool.name for tool in module.ASSESSMENT_TOOLS}
 
 
 def test_assessment_import_keeps_every_operation_and_enforces_roe_exclusions(

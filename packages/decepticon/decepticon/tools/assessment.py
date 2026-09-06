@@ -408,7 +408,77 @@ def assessment_context_snapshot(
     return json.dumps(snapshot)
 
 
+@tool(
+    description="Inspect the selected sandbox capability manifest. Optional probe runs only fixed, bounded version/parser checks, never target requests. Installed or available is not authorization or end-to-end validation."
+)
+def assessment_capabilities(
+    state: Annotated[dict[str, Any], InjectedState],
+    config: RunnableConfig,
+    probe: bool = False,
+) -> str:
+    sandbox, _, _ = _context(state, config)
+    try:
+        return json.dumps(sandbox.capabilities(probe=probe))
+    except (SandboxError, HTTPError, ValueError):
+        raise AssessmentToolError("Sandbox capability inspection failed") from None
+
+
+@tool(
+    description="Read the five versioned defensive workflow contracts, artifact schemas, limits and non-assurance semantics. Consult this before preparing an artifact. Does not execute a workflow or expand scope."
+)
+def assessment_workflow_catalog(
+    state: Annotated[dict[str, Any], InjectedState],
+    config: RunnableConfig,
+) -> str:
+    sandbox, _, workspace = _context(state, config)
+    try:
+        return json.dumps(sandbox.workflow("catalog", {}, workspace_path=workspace))
+    except (SandboxError, HTTPError, ValueError):
+        raise AssessmentToolError("Workflow catalog is unavailable") from None
+
+
+@tool(
+    description="Review a workspace-relative artifact using a fixed defensive workflow. Requires an initialized, scope-matching assessment. Persists hashed evidence and an opaque run ID; does not update ASVS/baseline dispositions. This agent tool is artifact-only: live observation is available only through an explicit operator CLI/SDK request with enforcing RoE. Workflow IDs and exact artifact schemas come from assessment_workflow_catalog."
+)
+def assessment_run_workflow(
+    workflow_id: str,
+    url: str,
+    artifact_path: str,
+    state: Annotated[dict[str, Any], InjectedState],
+    config: RunnableConfig,
+    method: str | None = None,
+) -> str:
+    sandbox, engagement, workspace = _context(state, config)
+    try:
+        assessment = sandbox.assessment("report", {"limit": 1}, workspace_path=workspace)
+        if assessment.get("engagement_name") != engagement:
+            raise AssessmentToolError("Workflow engagement does not match the workspace")
+        host = urlsplit(url).hostname
+        policy = MachineEnforcement(
+            in_scope=tuple(ScopeRule(host) for host in assessment["allowed_hosts"]),
+            out_of_scope=tuple(ScopeRule(host) for host in assessment["denied_hosts"]),
+        )
+        if not host or not evaluate_target(host, policy).allow:
+            raise AssessmentToolError("Workflow asset is outside engagement scope")
+        payload: dict[str, Any] = {
+            "workflow_id": workflow_id,
+            "url": url,
+            "artifact_path": artifact_path,
+            "observe": False,
+        }
+        if method is not None:
+            payload["method"] = method
+        return json.dumps(sandbox.workflow("run", payload, workspace_path=workspace))
+    except AssessmentToolError:
+        raise
+    except (SandboxError, HTTPError, ValueError, KeyError, TypeError):
+        raise AssessmentToolError("Workflow request is invalid or unavailable") from None
+
+
 ASSESSMENT_REVIEW_TOOLS = [
+    assessment_capabilities,
+    assessment_workflow_catalog,
+    assessment_run_workflow,
     assessment_context_snapshot,
     assessment_asvs_catalog,
     assessment_asvs_status,
