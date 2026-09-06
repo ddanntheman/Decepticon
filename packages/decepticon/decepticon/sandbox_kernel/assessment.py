@@ -53,6 +53,7 @@ _ACTIONS = _MUTATIONS | {
     "asvs_report",
     "asvs_next",
     "asvs_list",
+    "context_sources",
 }
 _TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 
@@ -513,6 +514,8 @@ class AssessmentStore:
             raise AssessmentError("Unknown assessment action")
         if not isinstance(payload, dict):
             raise AssessmentError("payload must be an object")
+        if action == "context_sources":
+            return self._context_sources(payload)
         if action == "scenario_catalog":
             from decepticon.sandbox_kernel.threat_scenarios import list_scenarios
 
@@ -882,6 +885,175 @@ class AssessmentStore:
             "total_operations": len(state["operations"]),
             "total_cases": len(state["cases"]),
         }
+
+    def _context_sources(self, payload: dict[str, Any]) -> dict[str, Any]:
+        maximum = _integer(payload.get("max_rows", 1000), "max_rows", 1, 1000)
+        try:
+            if self.workspace.resolve(strict=True) != self.workspace:
+                raise AssessmentError("Snapshot workspace has moved or become a symlink")
+        except OSError as exc:
+            raise AssessmentError("Snapshot workspace is unavailable") from exc
+        report: dict[str, Any] | None = None
+        state: dict[str, Any] | None = None
+        ledger_status = "unavailable"
+        try:
+            if self._directory.is_symlink() or self._database.is_symlink():
+                raise AssessmentError("Assessment storage cannot be a symlink")
+            if not stat.S_ISREG(self._database.stat().st_mode):
+                raise AssessmentError("Assessment storage must be a regular file")
+            with (
+                closing(
+                    sqlite3.connect(
+                        self._database.as_uri() + "?mode=ro",
+                        uri=True,
+                        timeout=30,
+                        isolation_level=None,
+                    )
+                ) as db,
+                db,
+            ):
+                db.execute("BEGIN")
+                tables = {
+                    row[0]
+                    for row in db.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+                    )
+                }
+                if (
+                    tables != {"ledger", "history"}
+                    or db.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION
+                ):
+                    raise AssessmentError("Corrupt or incompatible assessment schema")
+                state = self._load(db)
+                report = self._report(db, state, {"limit": 1}, "report")
+        except FileNotFoundError:
+            ledger_status = "unavailable"
+        except (AssessmentError, OSError, sqlite3.Error):
+            ledger_status = "error"
+        label = payload.get("engagement_name", report.get("engagement_name") if report else None)
+        if not isinstance(label, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", label):
+            raise AssessmentError("A valid engagement name is required for a snapshot")
+        if report and label != report["engagement_name"]:
+            raise AssessmentError("Snapshot engagement does not match the selected workspace")
+        sources: dict[str, Any] = {
+            name: {"engagement": label, "status": "unavailable", "data": {}}
+            for name in ("scope", "coverage", "inventory", "objectives", "asvs")
+        }
+        for name in ("scope", "coverage", "inventory", "asvs"):
+            sources[name]["status"] = ledger_status
+        if report is not None and state is not None:
+            sources["scope"] = {
+                "engagement": label,
+                "status": "ok",
+                "total": 1,
+                "data": {key: report[key] for key in ("allowed_hosts", "denied_hosts")},
+            }
+            sources["coverage"] = {
+                "engagement": label,
+                "status": "ok",
+                "total": 1,
+                "data": {
+                    key: report[key]
+                    for key in (
+                        "baseline",
+                        "revision",
+                        "total_operations",
+                        "total_cases",
+                        "status_counts",
+                        "coverage",
+                        "complete",
+                    )
+                },
+            }
+            for source, action, field in (
+                ("inventory", "inventory", "operations"),
+                ("asvs", "asvs_list", "plans"),
+            ):
+                try:
+                    page = (
+                        _page(list(state["operations"].values()), {"limit": maximum}, "operations")
+                        if source == "inventory"
+                        else self._asvs_dispatch(state, {"limit": maximum}, action)
+                    )
+                    rows = []
+                    for item in page[field]:
+                        if source == "inventory":
+                            url = urlsplit(item["url"])
+                            rows.append(
+                                {
+                                    "operation_id": item["operation_id"],
+                                    "method": item["method"],
+                                    "url": urlunsplit((url.scheme, url.netloc, "", "", "")),
+                                }
+                            )
+                        else:
+                            url = urlsplit(item["asset"])
+                            rows.append(
+                                {
+                                    key: item[key]
+                                    for key in (
+                                        "plan_id",
+                                        "level",
+                                        "version",
+                                        "status_counts",
+                                        "coverage",
+                                        "complete",
+                                    )
+                                }
+                                | {"asset": urlunsplit((url.scheme, url.netloc, "", "", ""))}
+                            )
+                    sources[source] = {
+                        "engagement": label,
+                        "status": "ok",
+                        "total": page["total"],
+                        "data": rows,
+                    }
+                except AssessmentError:
+                    sources[source]["status"] = "error"
+        try:
+            _, raw = self._evidence("plan/opplan.json", capture=True)
+            plan = _json_object(raw)
+            if (
+                plan.get("engagement_name") != label
+                or plan.get("engagement", label) != label
+                or not isinstance(plan.get("objectives"), list)
+            ):
+                raise AssessmentError("OPPLAN does not match the selected engagement")
+            for item in plan["objectives"]:
+                if not isinstance(item, dict) or any(
+                    key in item and item[key] != label for key in ("engagement", "engagement_name")
+                ):
+                    raise AssessmentError("Invalid or mismatched objective metadata")
+            rows = []
+            for item in plan["objectives"][:maximum]:
+                identity = item.get("id")
+                rows.append(
+                    {
+                        "id": "sha256:"
+                        + _sha(str(identity).encode("utf-8", errors="surrogatepass"))
+                        if type(identity) in (str, int)
+                        else None,
+                        "status": item.get("status")
+                        if item.get("status")
+                        in ("pending", "in-progress", "completed", "blocked", "cancelled")
+                        else None,
+                        "phase": item.get("phase")
+                        if item.get("phase")
+                        in ("recon", "initial-access", "post-exploit", "c2", "exfiltration")
+                        else None,
+                    }
+                )
+            sources["objectives"] = {
+                "engagement": label,
+                "status": "ok",
+                "total": len(plan["objectives"]),
+                "data": rows,
+            }
+        except AssessmentError as exc:
+            sources["objectives"]["status"] = (
+                "unavailable" if isinstance(exc.__cause__, FileNotFoundError) else "error"
+            )
+        return {"engagement": label, "sources": sources}
 
     def _asvs_plan_report(
         self, state: dict[str, Any], plan: dict[str, Any], cache: dict[str, Any]

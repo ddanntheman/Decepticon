@@ -182,6 +182,7 @@ class AssessmentRequest(BaseModel):
         "asvs_report",
         "asvs_next",
         "asvs_list",
+        "context_sources",
     ]
     payload: dict[str, Any] = Field(default_factory=dict)
 

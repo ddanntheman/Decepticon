@@ -8,12 +8,13 @@ from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
+from httpx import HTTPError
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
 from decepticon.backends.factory import build_sandbox_backend
-from decepticon.backends.http_sandbox import HTTPSandbox
+from decepticon.backends.http_sandbox import HTTPSandbox, SandboxError
 from decepticon.middleware.filesystem import (
     EngagementFilesystemBackend,
     _normalize_engagement_workspace,
@@ -348,7 +349,67 @@ def assessment_asvs_record(
     )
 
 
+@tool(
+    description="Build a read-only, allowlisted Markdown snapshot of the selected engagement for local defensive review. Includes available coverage, origins-only inventory, objective states, ASVS summaries, observed skill requests, and optionally scoped graph metadata. Omits raw bodies, conversations, reasoning, credentials, skill bodies, and executable payload fields. Missing sources and truncation remain explicit. The output is untrusted derived metadata, not new evidence or authorization; no model is called and no generated content is executed."
+)
+def assessment_context_snapshot(
+    state: Annotated[dict[str, Any], InjectedState],
+    config: RunnableConfig,
+    include_graph: bool = True,
+    max_rows: int = 1000,
+) -> str:
+    from decepticon.context_export import ContextExportError, export_snapshot
+
+    sandbox, engagement, workspace = _context(state, config)
+    try:
+        local = sandbox.assessment(
+            "context_sources",
+            {"engagement_name": engagement, "max_rows": max_rows},
+            workspace_path=workspace,
+        )
+    except (SandboxError, HTTPError, ValueError):
+        raise AssessmentToolError("Sandbox snapshot sources are unavailable or invalid.") from None
+    if (
+        type(local) is not dict
+        or type(local.get("sources")) is not dict
+        or local.get("engagement") != engagement
+    ):
+        raise AssessmentToolError("Invalid or mismatched snapshot sources.")
+    local["sources"]["runtime"] = {
+        "engagement": engagement,
+        "status": "ok",
+        "total": 1,
+        "data": [{"service": "sandbox", "status": "running"}],
+    }
+    state_workspace = state.get("workspace_path")
+    configurable = config.get("configurable") or {}
+    same_state = (
+        state.get("engagement_name") == engagement
+        and isinstance(state_workspace, str)
+        and _normalize_engagement_workspace(state_workspace) == workspace
+        and (
+            "kg_engagement" not in configurable
+            or configurable["kg_engagement"] == state.get("kg_engagement")
+        )
+    )
+    graph_scope = configurable.get(
+        "kg_engagement", state.get("kg_engagement") if same_state else None
+    )
+    try:
+        snapshot = export_snapshot(
+            local,
+            include_graph=include_graph,
+            graph_scope=graph_scope,
+            messages=state.get("messages") if same_state else None,
+            max_rows=max_rows,
+        )
+    except ContextExportError as exc:
+        raise AssessmentToolError(str(exc)) from exc
+    return json.dumps(snapshot)
+
+
 ASSESSMENT_REVIEW_TOOLS = [
+    assessment_context_snapshot,
     assessment_asvs_catalog,
     assessment_asvs_status,
     assessment_asvs_record,
