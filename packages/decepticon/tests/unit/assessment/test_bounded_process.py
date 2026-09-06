@@ -88,10 +88,12 @@ def test_disables_stdin_and_inherited_secrets_and_honors_cwd(
             sys.executable,
             "-B",
             "-c",
-            "import os,sys; "
-            "print(any(k in os.environ for k in "
-            "('ASSESSMENT_TEST_SECRET','PYTHONPATH','HTTP_PROXY','BASH_ENV','HOME'))); "
-            "print(sys.stdin.read() == ''); print(os.getcwd() == sys.argv[1])",
+            (
+                "import os,sys; "
+                "print(any(k in os.environ for k in "
+                "('ASSESSMENT_TEST_SECRET','PYTHONPATH','HTTP_PROXY','BASH_ENV','HOME'))); "
+                "print(sys.stdin.read() == ''); print(os.getcwd() == sys.argv[1])"
+            ),
             str(tmp_path),
         ],
         cwd=str(tmp_path),
