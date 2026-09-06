@@ -17,6 +17,19 @@ submodule itself; this file is a summary attribution.
 
 The complete MIT license text ships in `skills/_corpus/payloads/LICENSE`.
 
+## Bundled catalog data
+
+### OWASP Application Security Verification Standard 5.0.0
+- **Path**: `packages/decepticon/decepticon/sandbox_kernel/OWASP_Application_Security_Verification_Standard_5.0.0_en.json`
+- **Upstream**: https://github.com/OWASP/ASVS/releases/tag/v5.0.0_release
+- **Pinned commit**: `5cf9b032440be53ce345ab3c130fda46ba1ce7a2`
+- **License**: CC-BY-SA-4.0 — https://creativecommons.org/licenses/by-sa/4.0/
+- **Attribution**: OWASP ASVS project and contributors
+- **Use**: Unmodified English requirement data for catalog-backed defensive assessment planning and review. Requirement text retains its upstream license; no OWASP endorsement or certification is implied.
+
+The packaged `sandbox_kernel/ASVS-NOTICE.txt` preserves attribution, provenance,
+and the upstream license reference alongside the catalog.
+
 ## Referenced (not vendored)
 
 ### h4cker

@@ -32,7 +32,15 @@ _SOURCE_KINDS = {"openapi", "traffic", "source", "manual", "osint"}
 _SOURCE_STATUSES = {"ok", "empty", "error", "unavailable", "mock"}
 _CONTROLS = ("http.nosniff", "http.hsts", "auth.access-control", "source.authorization")
 _STATUSES = ("untested", "pass", "fail", "blocked", "inconclusive", "not_applicable")
-_MUTATIONS = {"initialize", "import", "access", "record", "check_headers"}
+_MUTATIONS = {
+    "initialize",
+    "import",
+    "access",
+    "record",
+    "check_headers",
+    "asvs_init",
+    "asvs_record",
+}
 _ACTIONS = _MUTATIONS | {
     "inventory",
     "next",
@@ -41,6 +49,10 @@ _ACTIONS = _MUTATIONS | {
     "scenario_catalog",
     "evaluate_scenario",
     "prioritize_kev",
+    "asvs_catalog",
+    "asvs_report",
+    "asvs_next",
+    "asvs_list",
 }
 _TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 
@@ -505,6 +517,17 @@ class AssessmentStore:
             from decepticon.sandbox_kernel.threat_scenarios import list_scenarios
 
             return list_scenarios()
+        if action == "asvs_catalog":
+            from decepticon.sandbox_kernel.asvs_catalog import ASVSCatalogError, catalog
+
+            try:
+                return catalog(
+                    payload.get("level", 2),
+                    offset=payload.get("offset", 0),
+                    limit=payload.get("limit", 50),
+                )
+            except ASVSCatalogError as exc:
+                raise AssessmentError(str(exc)) from exc
         expected = payload.get("expected_revision")
         if expected is not None:
             expected = _integer(expected, "expected_revision", 0)
@@ -593,6 +616,8 @@ class AssessmentStore:
                     result = self._evaluate_threat(state, payload, action)
                 elif action == "check_headers":
                     result = self._check_headers(state, payload)
+                elif action.startswith("asvs_"):
+                    result = self._asvs_dispatch(state, payload, action)
                 if before != _dump(state):
                     if new:
                         db.execute(
@@ -666,7 +691,34 @@ class AssessmentStore:
                 != configuration["denied_hosts"]
             ):
                 raise AssessmentError("The deny policy does not match initialization history")
+            initialized_asvs = {
+                _json_object(row[3])["plan_id"] for row in audit if row[1] == "asvs_init"
+            }
+            if initialized_asvs != set(state.get("asvs_plans", {})):
+                raise AssessmentError("ASVS plans do not match their initialization history")
             self._validate_state(effective_state)
+            review_links = {
+                event["revision"]: (
+                    plan_id,
+                    requirement_id,
+                    event["status"],
+                    event["method"],
+                    event["evidence"],
+                )
+                for plan_id, plan in state.get("asvs_plans", {}).items()
+                for requirement_id, record in plan["records"].items()
+                for event in record["history"]
+            }
+            audit_links = {}
+            for row in audit:
+                if row[1] == "asvs_record":
+                    details = _json_object(row[3])
+                    audit_links[row[0]] = tuple(
+                        details[key]
+                        for key in ("plan_id", "requirement_id", "status", "method", "evidence")
+                    )
+            if review_links != audit_links:
+                raise AssessmentError("ASVS outcomes do not match their revision history")
             return effective_state
         except (KeyError, TypeError, ValueError, AttributeError, IndexError, RecursionError) as exc:
             raise AssessmentError(
@@ -674,6 +726,25 @@ class AssessmentStore:
             ) from exc
 
     def _validate_state(self, state: dict[str, Any]) -> None:
+        if "asvs_plans" in state:
+            from decepticon.sandbox_kernel.asvs_review import validate_plans
+
+            asvs_plans = state["asvs_plans"]
+            validate_plans(asvs_plans, revision=state["revision"])
+            for plan in asvs_plans.values():
+                scoped = _operation(
+                    {"url": plan["asset"], "method": "GET"},
+                    None,
+                    state["allowed_hosts"],
+                    state["denied_hosts"],
+                )
+                if scoped["url"] != plan["asset"] or urlsplit(plan["asset"]).query:
+                    raise AssessmentError("ASVS application identity is not canonical")
+                for record in plan["records"].values():
+                    for outcome in [record, *record["history"]]:
+                        for reference in outcome["evidence"]:
+                            _relative_path(reference["path"])
+                            _integer(reference["size_bytes"], "evidence size", 1)
         for field in ("created_at", "updated_at"):
             _timestamp(state[field], field, allow_future=True)
         provenance: dict[str, set[str]] = {}
@@ -811,6 +882,145 @@ class AssessmentStore:
             "total_operations": len(state["operations"]),
             "total_cases": len(state["cases"]),
         }
+
+    def _asvs_plan_report(
+        self, state: dict[str, Any], plan: dict[str, Any], cache: dict[str, Any]
+    ) -> dict[str, Any]:
+        from decepticon.sandbox_kernel.asvs_review import report_plan
+
+        for record in plan["records"].values():
+            for reference in record["evidence"]:
+                path = reference["path"]
+                if path not in cache:
+                    try:
+                        cache[path] = self._evidence(path)[0]
+                    except AssessmentError:
+                        cache[path] = None
+        report = report_plan(
+            plan,
+            available_roles=state["available_roles"],
+            source_available=state["source_available"],
+            evidence_checks=cache,
+        )
+        return report | {
+            "engagement_name": state["engagement_name"],
+            "plan_id": plan["plan_id"],
+            "asset": plan["asset"],
+            "level": plan["level"],
+            "version": plan["catalog_version"],
+            "baseline": f"asvs-{plan['catalog_version']}-L{plan['level']}",
+        }
+
+    def _asvs_dispatch(
+        self, state: dict[str, Any], payload: dict[str, Any], action: str
+    ) -> dict[str, Any]:
+        from decepticon.sandbox_kernel.asvs_review import (
+            ASVSReviewError,
+            create_plan,
+            record_result,
+        )
+
+        try:
+            plans = state.get("asvs_plans", {})
+            if action == "asvs_init":
+                specification = payload
+                if "plan_path" in payload:
+                    if set(payload) - {"plan_path", "expected_revision"}:
+                        raise AssessmentError(
+                            "Reviewed ASVS plan cannot be combined with inline fields"
+                        )
+                    specification = _json_object(
+                        self._evidence(payload["plan_path"], capture=True)[1]
+                    )
+                    if set(specification) - {"asset", "level", "prerequisites"}:
+                        raise AssessmentError("Unsupported ASVS plan fields")
+                prerequisites = specification.get("prerequisites", {})
+                if payload.get("prerequisites_path") is not None:
+                    prerequisites = _json_object(
+                        self._evidence(payload["prerequisites_path"], capture=True)[1]
+                    )
+                application = _operation(
+                    {"url": specification.get("asset"), "method": "GET"},
+                    None,
+                    state["allowed_hosts"],
+                    state["denied_hosts"],
+                )["url"]
+                if urlsplit(application).query:
+                    raise AssessmentError("ASVS application URLs must not contain query parameters")
+                plan = create_plan(application, specification.get("level", 2), prerequisites)
+                state.setdefault("asvs_plans", {}).setdefault(plan["plan_id"], plan)
+                return {
+                    key: plan[key]
+                    for key in ("plan_id", "asset", "level", "catalog_version", "catalog_sha256")
+                } | {"baseline_coverage_updated": False}
+            cache: dict[str, Any] = {}
+            if action == "asvs_list":
+                summaries = []
+                for plan in plans.values():
+                    report = self._asvs_plan_report(state, plan, cache)
+                    summaries.append(
+                        {
+                            key: report[key]
+                            for key in (
+                                "plan_id",
+                                "asset",
+                                "level",
+                                "version",
+                                "status_counts",
+                                "coverage",
+                                "complete",
+                            )
+                        }
+                    )
+                return {"engagement_name": state["engagement_name"]} | _page(
+                    summaries, payload, "plans"
+                )
+            plan_id = _text(payload.get("plan_id"), "plan_id", 128)
+            if plan_id not in plans:
+                raise AssessmentError("Unknown ASVS plan")
+            if action == "asvs_record":
+                paths = payload.get("evidence_paths", [])
+                if not isinstance(paths, list):
+                    raise AssessmentError("evidence_paths must be a list")
+                references = [
+                    self._evidence(path)[0]
+                    for path in sorted({str(_relative_path(path)) for path in paths})
+                ]
+                requirement_id = _text(payload.get("requirement_id"), "requirement_id", 128)
+                recorded = record_result(
+                    plans[plan_id],
+                    requirement_id,
+                    payload.get("status"),
+                    payload.get("rationale"),
+                    payload.get("method"),
+                    references,
+                    revision=state["revision"] + 1,
+                    recorded_at=_now(),
+                    available_roles=state["available_roles"],
+                    source_available=state["source_available"],
+                )
+                return {
+                    "plan_id": plan_id,
+                    "requirement_id": requirement_id,
+                    "status": recorded["status"],
+                    "method": recorded["method"],
+                    "evidence": references,
+                    "evaluation_mode": "attested",
+                    "independently_verified": False,
+                    "baseline_coverage_updated": False,
+                }
+            report = self._asvs_plan_report(state, plans[plan_id], cache)
+            cases = report.pop("cases")
+            if action == "asvs_next":
+                cases = [
+                    case
+                    for case in cases
+                    if case["prerequisites_available"]
+                    and case["status"] in {"untested", "blocked", "inconclusive"}
+                ]
+            return report | _page(cases, payload, "cases")
+        except ASVSReviewError as exc:
+            raise AssessmentError(str(exc)) from exc
 
     def _evidence(
         self, value: Any, capture: bool = False, capture_limit: int = 2 * 1024 * 1024

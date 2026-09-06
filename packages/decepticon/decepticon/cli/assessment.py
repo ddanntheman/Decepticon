@@ -25,6 +25,52 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace", required=True, type=Path)
     parser.add_argument("--expected-revision", type=int)
     commands = parser.add_subparsers(dest="action", required=True)
+    asvs = commands.add_parser(
+        "asvs-catalog", help="Read the pinned OWASP ASVS 5.0.0 catalog; no assessment claims"
+    )
+    asvs.add_argument("--level", type=int, choices=[1, 2, 3], default=2)
+    asvs.add_argument("--offset", type=int, default=0)
+    asvs.add_argument("--limit", type=int, default=50)
+    asvs_init = commands.add_parser(
+        "asvs-init", help="Create an application-level, initially unreviewed ASVS plan"
+    )
+    asvs_init.add_argument("--asset", required=True)
+    asvs_init.add_argument("--level", type=int, choices=[1, 2, 3], default=2)
+    asvs_init.add_argument(
+        "--prerequisites", help="Workspace-relative JSON: requirement ID to roles/source_required"
+    )
+    asvs_record = commands.add_parser(
+        "asvs-record", help="Record an evidence-backed ASVS reviewer attestation"
+    )
+    asvs_record.add_argument("--plan", required=True)
+    asvs_record.add_argument("--requirement", required=True)
+    asvs_record.add_argument(
+        "--status",
+        required=True,
+        choices=["pass", "fail", "not_applicable", "blocked", "inconclusive"],
+    )
+    asvs_record.add_argument(
+        "--method",
+        required=True,
+        choices=[
+            "code_review",
+            "config_review",
+            "supplied_capture",
+            "manual_review",
+            "applicability_review",
+        ],
+    )
+    asvs_record.add_argument("--rationale", required=True)
+    asvs_record.add_argument("--evidence", action="append", default=[])
+    for name in ("asvs-report", "asvs-next", "asvs-list"):
+        command = commands.add_parser(name)
+        if name != "asvs-list":
+            command.add_argument("--plan", required=True)
+        command.add_argument("--offset", type=int, default=0)
+        command.add_argument("--limit", type=int, default=50)
+        if name == "asvs-report":
+            command.add_argument("--fail-on-gaps", action="store_true")
+            command.add_argument("--format", choices=["json", "markdown"], default="json")
     commands.add_parser(
         "scenarios", help="List sourced defensive scenarios and their artifact contracts"
     )
@@ -148,6 +194,29 @@ def _read_artifact(value: str) -> tuple[Path, str]:
 
 def _payload(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     action = args.action
+    if action == "asvs-catalog":
+        return "asvs_catalog", {"level": args.level, "offset": args.offset, "limit": args.limit}
+    if action == "asvs-init":
+        return "asvs_init", {
+            "asset": args.asset,
+            "level": args.level,
+            "prerequisites_path": args.prerequisites,
+        }
+    if action == "asvs-record":
+        return "asvs_record", {
+            "plan_id": args.plan,
+            "requirement_id": args.requirement,
+            "status": args.status,
+            "method": args.method,
+            "rationale": args.rationale,
+            "evidence_paths": args.evidence,
+        }
+    if action in {"asvs-report", "asvs-next", "asvs-list"}:
+        return action.replace("-", "_"), {
+            "plan_id": getattr(args, "plan", None),
+            "offset": args.offset,
+            "limit": args.limit,
+        }
     if action == "scenarios":
         return "scenario_catalog", {}
     if action == "evaluate-scenario":
@@ -208,6 +277,8 @@ def main(argv: list[str] | None = None) -> int:
             "access",
             "record",
             "check_headers",
+            "asvs_init",
+            "asvs_record",
         }:
             payload["expected_revision"] = args.expected_revision
         result = AssessmentStore(args.workspace).dispatch(action, payload)

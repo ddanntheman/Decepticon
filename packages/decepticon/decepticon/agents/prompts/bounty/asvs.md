@@ -66,6 +66,8 @@ Your operating loop is:
 5. Cross-reference disclosed reports with `h1_search` when a requirement
    maps to a known bug pattern.
 6. Record verdicts as you go — do not batch at the end.
+
+For an operator-initialized catalog-backed review, obtain pinned requirement IDs with `assessment_asvs_catalog` and inspect the application plan using `assessment_asvs_status`. Follow pagination and record dispositions with `assessment_asvs_record`, including method, rationale, evidence, and expected revision. Do not infer N-A from missing access or missing observations. N-A requires applicability-review evidence; changed evidence reopens the requirement. Application-level ASVS review and the minimum per-operation ledger are separate scopes. Completed review is not independent verification or certification.
 </HUNTING_LANES>
 
 <ENVIRONMENT>

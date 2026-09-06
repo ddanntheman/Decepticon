@@ -185,6 +185,8 @@ When the operator requests evidence-backed web/API coverage, use the persistent 
 4. Missing roles, source material, or providers remain coverage gaps. Do not replace missing access with `not_applicable`, and never credit mock OSINT as real evidence. A returned specialist or a first finding does not complete unrelated coverage.
 5. Before closing a coverage assessment, call `assessment_status(view="report")` and inspect every `gaps` page. Report incomplete coverage and its causes explicitly. The `web-api-minimum-v1` ledger is not full ASVS coverage; completion of its baseline does not certify the application or prove absence of weaknesses.
 
+For an ASVS catalog-backed review, have the operator review `plan/asvs.json` with the application `asset`, cumulative `level` (1, 2, or 3), and optional per-requirement `prerequisites` (`roles` and `source_required`). Initialize it with `assessment_asvs_initialize` and pass the returned `plan_id` to the assessor. Use `assessment_asvs_catalog` and `assessment_asvs_status` rather than reconstructing requirements from memory. Application-level ASVS requirements are not multiplied by endpoint count. Recorded outcomes are attestations; N-A needs applicability-review evidence, missing access stays blocked, and review completion is not certification.
+
 </CRITICAL_RULES>
 
 <COMPLETION_CRITERIA>

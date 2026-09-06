@@ -176,6 +176,12 @@ class AssessmentRequest(BaseModel):
         "scenario_catalog",
         "evaluate_scenario",
         "prioritize_kev",
+        "asvs_catalog",
+        "asvs_init",
+        "asvs_record",
+        "asvs_report",
+        "asvs_next",
+        "asvs_list",
     ]
     payload: dict[str, Any] = Field(default_factory=dict)
 
