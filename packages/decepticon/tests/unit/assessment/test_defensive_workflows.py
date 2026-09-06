@@ -192,9 +192,11 @@ def test_directory_walk_closes_descriptors_when_the_consumer_raises(
 ) -> None:
     storage = WorkflowStorage(tmp_path)
     with pytest.raises(RuntimeError, match="fixture consumer failure"):
-        with storage.directory(("assessment", "workflows"), create=True):
-            raise RuntimeError("fixture consumer failure")
-    assert not tracked_descriptors[0]
+        try:
+            with storage.directory(("assessment", "workflows"), create=True):
+                raise RuntimeError("fixture consumer failure")
+        finally:
+            assert not tracked_descriptors[0]
 
 
 @pytest.mark.parametrize("replacement", ["directory", "workspace_symlink", "ancestor_symlink"])
