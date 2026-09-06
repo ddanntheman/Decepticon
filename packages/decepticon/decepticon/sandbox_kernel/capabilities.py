@@ -8,12 +8,35 @@ import platform
 import re
 import shutil
 import sys
+from pathlib import Path
 from typing import Any
 
 from decepticon.sandbox_kernel.bounded_process import MAX_OUTPUT_BYTES, run_bounded
 
 _PROBE_TIMEOUT_SECONDS = 1.0
 _PROBE_OUTPUT_BYTES = 4096
+_IMPORT_TIMEOUT_SECONDS = 2.0
+_WORKFLOW_IMPORT_CHECK = """
+import os
+import sys
+os.environ["DECEPTICON_SKIP_BOOT"] = "1"
+sys.path.insert(0, sys.argv[1])
+
+def deny_network(event: str, args: tuple[object, ...]) -> None:
+    if event.startswith("socket.") or event in {"subprocess.Popen", "os.system", "os.posix_spawn"}:
+        raise RuntimeError("Workflow import checks cannot perform network or process actions")
+
+sys.addaudithook(deny_network)
+try:
+    from decepticon.sandbox_kernel.defensive_workflows import DefensiveWorkflowRunner
+    if not callable(DefensiveWorkflowRunner):
+        sys.exit(1)
+except ImportError:
+    sys.exit(2)
+except Exception:
+    sys.exit(1)
+sys.stdout.write("workflow-runtime-ready\\n")
+"""
 _VERSION_ARGS = {"nmap": "--version", "dig": "-v"}
 _VERSION_PATTERNS = {
     "nmap": rb"Nmap version ([0-9]{1,2}\.[0-9]{1,3}(?:SVN)?)(?: \( https://nmap\.org \))?"
@@ -47,7 +70,7 @@ _DEFINITIONS = (
 )
 _LIMITATIONS = (
     "Availability is not authorization or a successful assessment. "
-    "Version probes and builtin parser/runtime self-checks are not end-to-end validation."
+    "Version probes, workflow import checks, and builtin parser/runtime self-checks are not end-to-end validation."
 )
 
 
@@ -166,6 +189,49 @@ def _inspect_binary(entry: dict[str, Any], probe: bool) -> None:
     )
 
 
+def _inspect_workflow_runtime(probe: bool) -> dict[str, Any]:
+    result = {
+        "status": "not_checked",
+        "check": "not_performed",
+        "reason": "probe_required",
+        "timeout_seconds": _IMPORT_TIMEOUT_SECONDS,
+        "max_output_bytes": _PROBE_OUTPUT_BYTES,
+    }
+    if not probe:
+        return result
+    if os.name != "posix" or not callable(getattr(os, "killpg", None)):
+        return result | {"status": "unsupported", "reason": "process_groups_unsupported"}
+    result["check"] = "bounded_import_check"
+    try:
+        command = run_bounded(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                "-c",
+                _WORKFLOW_IMPORT_CHECK,
+                str(Path(__file__).resolve().parents[2]),
+            ],
+            cwd="/",
+            timeout=_IMPORT_TIMEOUT_SECONDS,
+            max_output_bytes=_PROBE_OUTPUT_BYTES,
+        )
+    except (OSError, ValueError, RuntimeError):
+        return result | {"status": "error", "reason": "import_check_error"}
+    if command.status != "completed":
+        return result | {
+            "status": "unavailable" if command.status == "unavailable" else "error",
+            "reason": "import_check_" + command.status,
+        }
+    if command.exit_code == 2:
+        return result | {"status": "unavailable", "reason": "import_missing"}
+    if command.exit_code != 0:
+        return result | {"status": "error", "reason": "import_check_failed"}
+    if command.stdout != b"workflow-runtime-ready\n" or command.stderr:
+        return result | {"status": "error", "reason": "unexpected_import_output"}
+    return result | {"status": "available", "reason": "import_verified"}
+
+
 def _platform_details() -> dict[str, str]:
     details = {}
     for field, read, allowed in (
@@ -219,4 +285,12 @@ def inspect_capabilities(*, probe: bool = False) -> dict[str, Any]:
             entry.update(status="unavailable", version=None, reason="runtime_unavailable")
         except (OSError, ValueError, RuntimeError):
             entry.update(status="error", version=None, reason="inspection_error")
+    runtime = _inspect_workflow_runtime(probe)
+    inspection["workflow_runtime"] = runtime
+    if probe and runtime["status"] != "available":
+        for entry in inspection["capabilities"]:
+            if entry["status"] == "available":
+                entry.update(
+                    status=runtime["status"], reason="workflow_runtime_" + runtime["status"]
+                )
     return inspection

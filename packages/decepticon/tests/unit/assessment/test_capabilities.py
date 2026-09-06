@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from decepticon.sandbox_kernel import capabilities
+from decepticon.sandbox_kernel.bounded_process import CommandResult, run_bounded
 from decepticon.sandbox_kernel.capabilities import capability_catalog
 
 IDS = (
@@ -38,6 +39,13 @@ def isolated_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(socket, "create_connection", no_network)
     monkeypatch.setattr(platform, "system", lambda: "Linux")
     monkeypatch.setattr(platform, "machine", lambda: "x86_64")
+
+    def isolated_probe(argv: list[str], **kwargs: Any) -> CommandResult:
+        if argv[0] == sys.executable:
+            return CommandResult("completed", 0, b"workflow-runtime-ready\n", b"")
+        return run_bounded(argv, **kwargs)
+
+    monkeypatch.setattr(capabilities, "run_bounded", isolated_probe)
 
 
 def synthetic_tools(monkeypatch: pytest.MonkeyPatch, programs: dict[str, str]) -> None:
@@ -407,4 +415,141 @@ def test_binary_lookup_is_resolved_before_changing_the_probe_working_directory(
     inspection = capabilities.inspect_capabilities(probe=True)
     assert inspection["capabilities"][0]["status"] == "available"
     assert inspection["capabilities"][0]["version"] == "7.95"
+    assert "fixture-secret" not in json.dumps(inspection)
+
+
+@pytest.mark.parametrize(
+    ("outcome", "status", "reason"),
+    [
+        (
+            CommandResult("completed", 2, b"", b"fixture-secret defusedxml"),
+            "unavailable",
+            "import_missing",
+        ),
+        (CommandResult("timeout", None, b"fixture-secret", b""), "error", "import_check_timeout"),
+        (
+            CommandResult("output_limit", None, b"fixture-secret", b""),
+            "error",
+            "import_check_output_limit",
+        ),
+        (CommandResult("completed", 1, b"", b"fixture-secret"), "error", "import_check_failed"),
+        (
+            CommandResult("completed", 0, b"fixture-secret", b""),
+            "error",
+            "unexpected_import_output",
+        ),
+        (
+            CommandResult("completed", 0, b"workflow-runtime-ready\n", b"fixture-secret"),
+            "error",
+            "unexpected_import_output",
+        ),
+    ],
+)
+def test_workflow_runtime_failure_cannot_leave_capabilities_available(
+    monkeypatch: pytest.MonkeyPatch, outcome: CommandResult, status: str, reason: str
+) -> None:
+    calls = []
+
+    def command(argv: list[str], **kwargs: Any) -> CommandResult:
+        if argv[0] == sys.executable:
+            calls.append((argv, kwargs))
+            return outcome
+        output = b"Nmap version 7.99\n" if Path(argv[0]).name == "nmap" else b"DiG 9.20.23\n"
+        return CommandResult("completed", 0, output, b"")
+
+    monkeypatch.setattr(shutil, "which", lambda name: f"/fixture-secret/{name}")
+    monkeypatch.setattr(capabilities, "run_bounded", command)
+    inspection = capabilities.inspect_capabilities(probe=True)
+    assert all(entry["status"] == status for entry in inspection["capabilities"])
+    assert inspection["workflow_runtime"]["status"] == status
+    assert inspection["workflow_runtime"]["reason"] == reason
+    assert inspection["workflow_runtime"]["check"] == "bounded_import_check"
+    assert inspection["end_to_end_validation"] == "not_performed"
+    assert [entry["version"] for entry in inspection["capabilities"][:2]] == ["7.99", "9.20.23"]
+    assert [entry["check"] for entry in inspection["capabilities"][:2]] == ["version_probe"] * 2
+    assert "fixture-secret" not in json.dumps(inspection)
+    assert len(calls) == 1
+    argv, options = calls[0]
+    assert argv[1:4] == ["-I", "-B", "-c"]
+    assert options["cwd"] == "/"
+    assert 0 < options["timeout"] <= 2
+    assert options["max_output_bytes"] <= 4096
+
+
+def test_static_inspection_does_not_claim_workflow_import_readiness() -> None:
+    inspection = capabilities.inspect_capabilities()
+    assert inspection["workflow_runtime"]["status"] == "not_checked"
+    assert inspection["workflow_runtime"]["check"] == "not_performed"
+    assert inspection["end_to_end_validation"] == "not_performed"
+
+
+@pytest.mark.parametrize(
+    "boundary", ["missing", "socket.connect", "socket.getaddrinfo", "subprocess.Popen"]
+)
+def test_actual_workflow_import_check_refuses_missing_dependencies_and_network_actions(
+    monkeypatch: pytest.MonkeyPatch, boundary: str
+) -> None:
+    popen = subprocess.Popen[bytes]
+    calls = []
+    action = (
+        'raise ModuleNotFoundError("fixture-secret /private/defusedxml")'
+        if boundary == "missing"
+        else f"sys.audit({boundary!r}, 'fixture-secret')"
+    )
+    prefix = (
+        "import sys\n"
+        "class DependencyBoundary:\n"
+        "    def find_spec(self, fullname, path=None, target=None):\n"
+        "        if fullname == 'defusedxml':\n"
+        f"            {action}\n"
+        "        return None\n"
+        "sys.meta_path.insert(0, DependencyBoundary())\n"
+    )
+
+    def launch(argv: list[str], **kwargs: Any) -> subprocess.Popen[bytes]:
+        calls.append(argv)
+        assert argv[:4] == [sys.executable, "-I", "-B", "-c"]
+        assert kwargs["cwd"] == "/"
+        assert kwargs["env"] == {"PATH": os.defpath, "LANG": "C", "LC_ALL": "C"}
+        assert kwargs["start_new_session"] is True
+        return popen([*argv[:4], prefix + argv[4], *argv[5:]], **kwargs)
+
+    monkeypatch.setattr(capabilities, "run_bounded", run_bounded)
+    monkeypatch.setattr(subprocess, "Popen", launch)
+    inspection = capabilities.inspect_capabilities(probe=True)
+    runtime = inspection["workflow_runtime"]
+    assert runtime["status"] == ("unavailable" if boundary == "missing" else "error")
+    assert runtime["reason"] == (
+        "import_missing" if boundary == "missing" else "import_check_failed"
+    )
+    assert not any(entry["status"] == "available" for entry in inspection["capabilities"])
+    assert len(calls) == 1
+    assert "fixture-secret" not in json.dumps(inspection)
+    assert "/private/" not in json.dumps(inspection)
+
+
+@pytest.mark.parametrize(
+    ("program", "reason"),
+    [
+        ("import time; time.sleep(4)", "import_check_timeout"),
+        ("import os; os.write(1, b'fixture-secret' * 65536)", "import_check_output_limit"),
+    ],
+)
+def test_workflow_import_process_is_actually_time_and_output_bounded(
+    monkeypatch: pytest.MonkeyPatch, program: str, reason: str
+) -> None:
+    popen = subprocess.Popen[bytes]
+
+    def launch(argv: list[str], **kwargs: Any) -> subprocess.Popen[bytes]:
+        assert argv[:4] == [sys.executable, "-I", "-B", "-c"]
+        return popen([*argv[:4], program, *argv[5:]], **kwargs)
+
+    monkeypatch.setattr(capabilities, "run_bounded", run_bounded)
+    monkeypatch.setattr(subprocess, "Popen", launch)
+    started = time.monotonic()
+    inspection = capabilities.inspect_capabilities(probe=True)
+    assert time.monotonic() - started < 3.5
+    assert inspection["workflow_runtime"]["reason"] == reason
+    assert inspection["workflow_runtime"]["status"] == "error"
+    assert not any(entry["status"] == "available" for entry in inspection["capabilities"])
     assert "fixture-secret" not in json.dumps(inspection)

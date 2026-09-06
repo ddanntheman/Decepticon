@@ -76,6 +76,7 @@ _LIMITATIONS = [
     "Observation never follows redirects, expands DNS aliases, or retries with weaker verification.",
     "Domain observation requires bounded dig resolution; one authorized IP is selected for Nmap/TLS.",
     "In-flight actions are bounded; abort and authorization are checked before and after each action.",
+    "Network observation is serial, one TCP port per process; artifacts lists all XML and artifact aliases the first.",
 ]
 _ARTIFACT_CONTRACTS: dict[str, dict[str, Any]] = {
     "network-inventory": {
@@ -875,7 +876,10 @@ class _Observation:
         self, argv: list[str], tag: str, duration: float = 4, addresses: list[str] | None = None
     ) -> bytes:
         addresses = addresses or []
-        delay = self.rules.min_inter_request_delay_ms / 1000 - (time.monotonic() - self.last_action)
+        minimum_delay = max(
+            self.rules.min_inter_request_delay_ms / 1000, 1.0 if argv[0] == "nmap" else 0.0
+        )
+        delay = minimum_delay - (time.monotonic() - self.last_action)
         if delay > 0:
             time.sleep(delay)
         duration = min(duration, self.deadline - time.monotonic())
@@ -986,7 +990,7 @@ class _Observation:
         self.manifest["resolved_ips"] = addresses
         return addresses, raw
 
-    def target_argv(self, peer: str) -> list[str]:
+    def target_argv(self, peer: str, port: int | None = None) -> list[str]:
         if self.manifest["workflow_id"] == "network-inventory":
             argv = [
                 "nmap",
@@ -998,16 +1002,12 @@ class _Observation:
                 "--no-stylesheet",
                 "--max-retries",
                 "0",
-                "--max-parallelism",
-                "1",
                 "--max-rate",
                 "1",
-                "--scan-delay",
-                "1000ms",
                 "--host-timeout",
                 "18s",
                 "-p",
-                ",".join(map(str, self.ports)),
+                str(port if port is not None else self.ports[0]),
                 "-oX",
                 "-",
             ]
@@ -1021,6 +1021,37 @@ class _Observation:
             peer,
             str(urlsplit(self.asset).port or 443),
         ]
+
+    def inspect_network(self, addresses: list[str]) -> dict[str, Any]:
+        observations = []
+        tool = None
+        complete = True
+        self.manifest["artifacts"] = []
+        for port in self.ports:
+            raw = self.command(
+                self.target_argv(addresses[0], port), f"network-{port}", 20, addresses
+            )
+            reference = self.save(f"nmap-{port}.xml", raw)
+            self.manifest["artifacts"].append(reference)
+            if self.manifest["artifact"] is None:
+                self.manifest["artifact"] = reference
+            result = _network(raw, self.asset, addresses[0])
+            if any(
+                item["protocol"] != "tcp" or item["port"] != port for item in result["observations"]
+            ):
+                raise AssessmentError("Nmap returned observations outside the selected TCP port")
+            if tool is not None and tool != result["tool"]:
+                raise AssessmentError("Nmap tool identity changed between port observations")
+            tool = result["tool"]
+            observations.extend(result["observations"])
+            complete = complete and result["status"] == "observed"
+        missing = sorted(set(self.ports) - {item["port"] for item in observations})
+        return {
+            "status": "observed" if complete and observations and not missing else "inconclusive",
+            "observations": observations,
+            "tool": tool,
+            "unobserved_ports": missing,
+        }
 
     def inspect_tls(self, addresses: list[str]) -> dict[str, Any]:
         peer = addresses[0]
@@ -1148,27 +1179,17 @@ class _Observation:
         return result | ({"error": error} if error is not None else {})
 
     def run(self) -> dict[str, Any]:
-        if self.manifest["workflow_id"] != "dns-inventory":
-            self.guard(self.target_argv(self.host), 20 if self.ports else 8, [])
+        if self.manifest["workflow_id"] == "network-inventory":
+            for port in self.ports:
+                self.guard(self.target_argv(self.host, port), 20, [])
+        elif self.manifest["workflow_id"] == "tls-inspection":
+            self.guard(self.target_argv(self.host), 8, [])
         addresses, raw = self.resolve()
         if self.manifest["workflow_id"] == "dns-inventory" and raw is not None:
             return _dns(raw, self.asset)
-        peer = addresses[0]
-        self.manifest["pinned_ip"] = peer
+        self.manifest["pinned_ip"] = addresses[0]
         if self.manifest["workflow_id"] == "network-inventory":
-            raw = self.command(self.target_argv(peer), "network", 20, addresses)
-            self.manifest["artifact"] = self.save("nmap.xml", raw)
-            result = _network(raw, self.asset, peer)
-            if any(
-                item["protocol"] != "tcp" or item["port"] not in self.ports
-                for item in result["observations"]
-            ):
-                raise AssessmentError("Nmap returned observations outside the selected TCP ports")
-            missing = sorted(set(self.ports) - {item["port"] for item in result["observations"]})
-            return result | {
-                "unobserved_ports": missing,
-                "status": "inconclusive" if missing else result["status"],
-            }
+            return self.inspect_network(addresses)
         return self.inspect_tls(addresses)
 
 

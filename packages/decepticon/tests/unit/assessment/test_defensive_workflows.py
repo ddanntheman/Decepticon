@@ -758,7 +758,9 @@ def test_network_observation_pins_one_address_and_uses_connect_only_fixed_argv(
         } <= set(argv)
         assert not {"-sS", "-sV", "-sC", "--script", "-A", "-O"} & set(argv)
         assert argv[argv.index("-p") + 1] == "443"
-        assert argv[argv.index("--max-parallelism") + 1] == "1"
+        assert "--max-parallelism" not in argv
+        assert "--scan-delay" not in argv
+        assert argv[argv.index("--max-rate") + 1] == "1"
         assert timeout <= 20
         return CommandResult(
             "completed",
@@ -1109,3 +1111,108 @@ def test_catalog_is_fixed_and_runs_never_overwrite(tmp_path: Path) -> None:
     assert first["run_id"] != second["run_id"]
     assert runner.report(first["run_id"]) == first
     assert runner.report(second["run_id"]) == second
+
+
+def test_network_ports_are_serial_rate_limited_and_preserved_as_separate_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    initialize(
+        tmp_path,
+        allowed=["192.0.2.10"],
+        in_scope=["192.0.2.10"],
+        max_concurrent_connections=1,
+        min_inter_request_delay_ms=250,
+    )
+    clock = [100.0]
+    calls: list[tuple[list[str], float]] = []
+
+    def sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    def command(argv: list[str], *, timeout: float, **kwargs: Any) -> CommandResult:
+        calls.append((argv, clock[0]))
+        assert 0 < timeout <= min(20, 130 - clock[0])
+        ports = argv[argv.index("-p") + 1].split(",")
+        clock[0] += 0.25
+        return CommandResult(
+            "completed",
+            0,
+            nmap_xml(
+                ports="".join(
+                    f'<port protocol="tcp" portid="{port}"><state state="open"/></port>'
+                    for port in ports
+                )
+            ),
+            b"",
+        )
+
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(time, "sleep", sleep)
+    monkeypatch.setattr(workflows, "run_bounded", command)
+    result = DefensiveWorkflowRunner(tmp_path).run(
+        "network-inventory", {"url": "https://192.0.2.10/", "observe": True, "ports": [443, 80]}
+    )
+    assert result["status"] == "observed"
+    assert [argv[argv.index("-p") + 1] for argv, _ in calls] == ["80", "443"]
+    assert calls[1][1] - calls[0][1] >= 1.25
+    assert all("--max-parallelism" not in argv for argv, _ in calls)
+    assert all(argv[argv.index("--max-rate") + 1] == "1" for argv, _ in calls)
+    assert [item["port"] for item in result["observations"]] == [80, 443]
+    assert result["unobserved_ports"] == []
+    assert len(result["processes"]) == len(result["artifacts"]) == 2
+    assert result["artifact"] == result["artifacts"][0]
+    for reference in result["artifacts"]:
+        assert reference in result["evidence"]
+        assert (
+            hashlib.sha256((tmp_path / reference["path"]).read_bytes()).hexdigest()
+            == reference["sha256"]
+        )
+    assert DefensiveWorkflowRunner(tmp_path).report(result["run_id"]) == result
+
+
+def test_serial_network_ports_share_the_original_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    initialize(tmp_path, allowed=["192.0.2.10"], in_scope=["192.0.2.10"])
+    clock = [100.0]
+    timeouts = []
+
+    def sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    def command(argv: list[str], *, timeout: float, **kwargs: Any) -> CommandResult:
+        timeouts.append(timeout)
+        if len(timeouts) == 1:
+            clock[0] += 19.5
+            return CommandResult(
+                "completed",
+                0,
+                nmap_xml(ports='<port protocol="tcp" portid="80"><state state="open"/></port>'),
+                b"",
+            )
+        clock[0] += timeout
+        return CommandResult("timeout", None, b"", b"")
+
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(time, "sleep", sleep)
+    monkeypatch.setattr(workflows, "run_bounded", command)
+    result = DefensiveWorkflowRunner(tmp_path).run(
+        "network-inventory",
+        {"url": "https://192.0.2.10/", "observe": True, "ports": [80, 443, 8443]},
+    )
+    assert timeouts == [20, 9.5]
+    assert result["status"] == "inconclusive"
+    assert result["error"]["code"] == "DEADLINE"
+    assert result["observations"] == []
+    assert len(result["processes"]) == 2
+    assert result["evidence_integrity"] == "verified"
+
+
+def test_forbidden_later_network_port_blocks_before_dns(tmp_path: Path) -> None:
+    initialize(tmp_path, forbidden_command_patterns=[r"-p 443(?:\s|$)"])
+    result = DefensiveWorkflowRunner(tmp_path).run(
+        "network-inventory", {"url": ASSET, "observe": True, "ports": [80, 443]}
+    )
+    assert result["status"] == "blocked"
+    assert result["error"]["code"] == "FORBIDDEN_COMMAND"
+    assert result["process"]["status"] == "not_run"
