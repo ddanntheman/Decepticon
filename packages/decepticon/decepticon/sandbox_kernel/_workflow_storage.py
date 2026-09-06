@@ -6,7 +6,7 @@ import os
 import re
 import stat
 from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -68,34 +68,34 @@ class WorkflowStorage:
     @contextmanager
     def directory(self, parts: tuple[str, ...], *, create: bool = False) -> Iterator[int]:
         try:
-            root = os.open(os.path.sep, os.O_RDONLY | os.O_DIRECTORY)
+            parent = os.open(os.path.sep, os.O_RDONLY | os.O_DIRECTORY)
             try:
-                with ExitStack() as opened:
-                    parent = root
-                    for part in self.workspace.parts[1:]:
-                        parent = opened.enter_context(_directory_descriptor(parent, part))
-                    info = os.fstat(parent)
-                    if self._identity is not None and (info.st_dev, info.st_ino) != self._identity:
-                        raise WorkflowStorageError("Workflow workspace identity changed")
-                    for part in parts:
-                        if part in {"", ".", ".."} or not re.fullmatch(r"[A-Za-z0-9_.-]+", part):
-                            raise WorkflowStorageError("Invalid workflow directory")
-                        if create:
-                            try:
-                                os.mkdir(part, mode=0o700, dir_fd=parent)
-                            except FileExistsError:
-                                if not stat.S_ISDIR(
-                                    os.stat(part, dir_fd=parent, follow_symlinks=False).st_mode
-                                ):
-                                    raise WorkflowStorageError(
-                                        "Workflow directory is unsafe"
-                                    ) from None
-                            else:
-                                os.fsync(parent)
-                        parent = opened.enter_context(_directory_descriptor(parent, part))
-                    yield parent
+                # Replace the owned parent handle instead of retaining every ancestor.
+                # Each child has a lexical lifetime; depth uses neither extra FDs nor recursion.
+                for part in self.workspace.parts[1:]:
+                    with _directory_descriptor(parent, part) as child:
+                        os.dup2(child, parent, inheritable=False)
+                info = os.fstat(parent)
+                if self._identity is not None and (info.st_dev, info.st_ino) != self._identity:
+                    raise WorkflowStorageError("Workflow workspace identity changed")
+                for part in parts:
+                    if part in {"", ".", ".."} or not re.fullmatch(r"[A-Za-z0-9_.-]+", part):
+                        raise WorkflowStorageError("Invalid workflow directory")
+                    if create:
+                        try:
+                            os.mkdir(part, mode=0o700, dir_fd=parent)
+                        except FileExistsError:
+                            if not stat.S_ISDIR(
+                                os.stat(part, dir_fd=parent, follow_symlinks=False).st_mode
+                            ):
+                                raise WorkflowStorageError("Workflow directory is unsafe") from None
+                        else:
+                            os.fsync(parent)
+                    with _directory_descriptor(parent, part) as child:
+                        os.dup2(child, parent, inheritable=False)
+                yield parent
             finally:
-                os.close(root)
+                os.close(parent)
         except (OSError, AttributeError) as exc:
             raise WorkflowStorageError(
                 "Workflow storage is missing, unsafe, or unavailable"
@@ -108,9 +108,12 @@ class WorkflowStorage:
                 raise WorkflowInputError(
                     "artifact_path must be a canonical workspace-relative file"
                 )
+            candidate = os.path.normpath(os.path.join(str(self.workspace), str(path)))
+            if not candidate.startswith(str(self.workspace).rstrip(os.sep) + os.sep):
+                raise WorkflowInputError("Artifact path escapes the workflow workspace")
             with self.directory(path.parts[:-1]) as parent:
                 descriptor = os.open(
-                    os.path.basename(str(path)),
+                    os.path.basename(candidate),
                     os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
                     dir_fd=parent,
                 )
@@ -191,11 +194,14 @@ class WorkflowStorage:
             descriptor = os.open(
                 name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent
             )
-            with os.fdopen(descriptor, "wb") as stream:
-                stream.write(raw)
-                stream.flush()
-                os.fchmod(stream.fileno(), 0o400)
-                os.fsync(stream.fileno())
+            try:
+                with os.fdopen(descriptor, "wb", closefd=False) as stream:
+                    stream.write(raw)
+                    stream.flush()
+                    os.fchmod(stream.fileno(), 0o400)
+                    os.fsync(stream.fileno())
+            finally:
+                os.close(descriptor)
             os.fsync(parent)
         return {"path": "/".join((*parts, name)), "sha256": _sha(raw), "size_bytes": len(raw)}
 
