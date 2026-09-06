@@ -78,6 +78,7 @@ UNTRUSTED_TOOL_NAMES: frozenset[str] = frozenset(
         "assessment_asvs_initialize",
         "assessment_asvs_status",
         "assessment_asvs_record",
+        "assessment_context_snapshot",
         "kg_query",
         "kg_neighbors",
         "kg_stats",

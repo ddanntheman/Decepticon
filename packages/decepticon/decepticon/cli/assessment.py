@@ -25,6 +25,22 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace", required=True, type=Path)
     parser.add_argument("--expected-revision", type=int)
     commands = parser.add_subparsers(dest="action", required=True)
+    snapshot = commands.add_parser(
+        "snapshot", help="Print a redacted engagement-metadata Markdown snapshot"
+    )
+    snapshot.add_argument("--engagement", help="Required when no assessment ledger is available")
+    snapshot.add_argument("--max-rows", type=int, default=1000)
+    snapshot.add_argument(
+        "--include-kg",
+        action="store_true",
+        help="Read metadata using the configured Neo4j connection",
+    )
+    snapshot.add_argument("--kg-scope", help="Explicit graph partition; required with --include-kg")
+    snapshot.add_argument(
+        "--require-complete",
+        action="store_true",
+        help="Exit 3 if requested metadata is unavailable or omitted",
+    )
     asvs = commands.add_parser(
         "asvs-catalog", help="Read the pinned OWASP ASVS 5.0.0 catalog; no assessment claims"
     )
@@ -194,6 +210,11 @@ def _read_artifact(value: str) -> tuple[Path, str]:
 
 def _payload(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     action = args.action
+    if action == "snapshot":
+        payload: dict[str, Any] = {"max_rows": args.max_rows}
+        if args.engagement is not None:
+            payload["engagement_name"] = args.engagement
+        return "context_sources", payload
     if action == "asvs-catalog":
         return "asvs_catalog", {"level": args.level, "offset": args.offset, "limit": args.limit}
     if action == "asvs-init":
@@ -268,7 +289,9 @@ def main(argv: list[str] | None = None) -> int:
     from decepticon.sandbox_kernel.assessment import AssessmentError, AssessmentStore
 
     args = _parser().parse_args(argv)
-    markdown = getattr(args, "format", "json") == "markdown"
+    snapshot_mode = args.action == "snapshot"
+    markdown = snapshot_mode or getattr(args, "format", "json") == "markdown"
+    snapshot = None
     try:
         action, payload = _payload(args)
         if args.expected_revision is not None and action in {
@@ -282,11 +305,29 @@ def main(argv: list[str] | None = None) -> int:
         }:
             payload["expected_revision"] = args.expected_revision
         result = AssessmentStore(args.workspace).dispatch(action, payload)
-        output = render_report(result) if markdown else json.dumps(result, indent=2)
+        if snapshot_mode:
+            from decepticon.context_export import ContextExportError, export_snapshot
+
+            if args.include_kg and not args.kg_scope:
+                raise AssessmentError("--include-kg requires an explicit --kg-scope")
+            try:
+                snapshot = export_snapshot(
+                    result,
+                    include_graph=args.include_kg,
+                    graph_scope=args.kg_scope,
+                    max_rows=args.max_rows,
+                )
+            except ContextExportError as exc:
+                raise AssessmentError(str(exc)) from exc
+            output = snapshot["markdown"]
+        else:
+            output = render_report(result) if markdown else json.dumps(result, indent=2)
     except (AssessmentError, AssessmentImportError, OSError, sqlite3.Error) as exc:
         print(f"Assessment failed: {exc}", file=sys.stderr)
         return 2
     print(output, end="" if markdown else "\n")
+    if snapshot is not None:
+        return 3 if args.require_complete and snapshot["partial"] else 0
     if action == "evaluate_scenario":
         return {"pass": 0, "fail": 1, "inconclusive": 3}.get(result.get("status"), 3)
     if action == "prioritize_kev" and args.fail_on_urgent:

@@ -5,8 +5,14 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import re
+from contextlib import closing
 from typing import Any, Protocol
 
+from decepticon.sandbox_kernel.context_snapshot import (
+    ContextSnapshotError,
+    Snapshot,
+    render_snapshot,
+)
 from decepticon_core.utils.engagement_scope import is_valid_engagement_label
 
 _KINDS = "Host Service Endpoint Finding Vulnerability CVE Misconfiguration Weakness".split()
@@ -146,6 +152,55 @@ def graph_source(
         }
     except Exception:
         return failed
+
+
+def export_snapshot(
+    local: dict[str, Any],
+    *,
+    include_graph: bool = False,
+    graph_scope: str | None = None,
+    messages: list | None = None,
+    max_rows: int = 1000,
+) -> Snapshot:
+    if (
+        type(local) is not dict
+        or type(local.get("sources")) is not dict
+        or type(include_graph) is not bool
+    ):
+        raise ContextExportError("Invalid local snapshot sources or graph selection.")
+    engagement = local.get("engagement")
+    if (
+        type(engagement) is not str
+        or _match(engagement, r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", 80) is None
+    ):
+        raise ContextExportError("Snapshot engagement must be a safe slug.")
+    _validate(engagement, max_rows)
+    sources = dict(local["sources"])
+    try:
+        render_snapshot(engagement, sources, max_rows=max_rows)
+    except ContextSnapshotError as exc:
+        raise ContextExportError(str(exc)) from exc
+    sources["findings"] = {
+        "engagement": engagement,
+        "status": "unavailable" if include_graph else "not_requested",
+        "data": [],
+    }
+    if include_graph and graph_scope is not None:
+        _validate(graph_scope, max_rows)
+        try:
+            from decepticon.middleware.kg_internal.store import KGStore
+
+            with closing(KGStore.from_env()) as store:
+                sources["findings"] = graph_source(
+                    store, engagement=engagement, graph_scope=graph_scope, max_rows=max_rows
+                )
+        except Exception:
+            sources["findings"] = {"engagement": engagement, "status": "error", "data": []}
+    sources["skills"] = skill_source(engagement, messages, max_rows=max_rows)
+    try:
+        return render_snapshot(engagement, sources, max_rows=max_rows)
+    except ContextSnapshotError as exc:
+        raise ContextExportError(str(exc)) from exc
 
 
 def skill_source(engagement: str, messages: list | None, *, max_rows: int = 1000) -> dict[str, Any]:
