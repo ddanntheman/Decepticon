@@ -121,6 +121,23 @@ def tracked_descriptors(
             original_close(descriptor)
 
 
+def test_evidence_descriptor_closes_when_stream_initialization_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tracked_descriptors: tuple[set[int], list[int]],
+) -> None:
+    storage = WorkflowStorage(tmp_path)
+    nonce = storage.new_run()
+
+    def fail_open(*args: Any, **kwargs: Any) -> Any:
+        raise OSError("fixture stream initialization failure")
+
+    monkeypatch.setattr(os, "fdopen", fail_open)
+    with pytest.raises(WorkflowStorageError):
+        storage.write(nonce, "fixture.json", b"{}")
+    assert not tracked_descriptors[0]
+
+
 def test_directory_walk_bounds_handles_for_deep_paths_and_unicode_workspaces(
     tmp_path: Path, tracked_descriptors: tuple[set[int], list[int]]
 ) -> None:
