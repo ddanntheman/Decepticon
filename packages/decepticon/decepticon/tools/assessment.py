@@ -269,7 +269,89 @@ def assessment_prioritize_kev(
     )
 
 
+def _asvs_call(
+    state: dict[str, Any], config: RunnableConfig, action: str, payload: dict[str, Any]
+) -> str:
+    sandbox, _, workspace = _context(state, config)
+    return json.dumps(sandbox.assessment(action, payload, workspace_path=workspace))
+
+
+@tool(
+    description="Read the pinned official OWASP ASVS 5.0.0 requirements, level counts, source hash and license. Levels are cumulative. Follow next_offset; catalog membership is not verification or certification."
+)
+def assessment_asvs_catalog(
+    state: Annotated[dict[str, Any], InjectedState],
+    config: RunnableConfig,
+    level: int = 2,
+    offset: int = 0,
+    limit: int = 50,
+) -> str:
+    return _asvs_call(
+        state, config, "asvs_catalog", {"level": level, "offset": offset, "limit": limit}
+    )
+
+
+@tool(
+    description="Initialize an application-level ASVS plan from operator-reviewed plan/asvs.json (asset, level, optional prerequisites mapping requirement IDs to roles/source_required). Requires an initialized scoped assessment. Every selected requirement starts unreviewed; no inferred exclusions or probes."
+)
+def assessment_asvs_initialize(
+    state: Annotated[dict[str, Any], InjectedState],
+    config: RunnableConfig,
+) -> str:
+    return _asvs_call(state, config, "asvs_init", {"plan_path": "plan/asvs.json"})
+
+
+@tool(
+    description="Inspect ASVS plans, a plan's full-denominator review status, or eligible next requirements. Empty plan_id lists plans. Results are evidence-backed attestations, not independent verification; no baseline coverage is granted. Follow pagination."
+)
+def assessment_asvs_status(
+    state: Annotated[dict[str, Any], InjectedState],
+    config: RunnableConfig,
+    plan_id: str = "",
+    view: Literal["report", "next", "plans"] = "report",
+    offset: int = 0,
+    limit: int = 50,
+) -> str:
+    action = "asvs_list" if not plan_id or view == "plans" else "asvs_" + view
+    return _asvs_call(state, config, action, {"plan_id": plan_id, "offset": offset, "limit": limit})
+
+
+@tool(
+    description="Record a reviewer attestation for one qualified ASVS requirement ID. Pass/fail/not_applicable require existing workspace-relative evidence; not_applicable also requires method=applicability_review. Missing declared access blocks these dispositions. Every result needs rationale and a review method. Supply expected_revision to reject stale updates. Does not execute tests or independently verify compliance."
+)
+def assessment_asvs_record(
+    plan_id: str,
+    requirement_id: str,
+    status: Literal["pass", "fail", "not_applicable", "blocked", "inconclusive"],
+    method: Literal[
+        "code_review", "config_review", "supplied_capture", "manual_review", "applicability_review"
+    ],
+    rationale: str,
+    state: Annotated[dict[str, Any], InjectedState],
+    config: RunnableConfig,
+    evidence_paths: list[str] | None = None,
+    expected_revision: int | None = None,
+) -> str:
+    return _asvs_call(
+        state,
+        config,
+        "asvs_record",
+        {
+            "plan_id": plan_id,
+            "requirement_id": requirement_id,
+            "status": status,
+            "method": method,
+            "rationale": rationale,
+            "evidence_paths": evidence_paths or [],
+            "expected_revision": expected_revision,
+        },
+    )
+
+
 ASSESSMENT_REVIEW_TOOLS = [
+    assessment_asvs_catalog,
+    assessment_asvs_status,
+    assessment_asvs_record,
     assessment_status,
     assessment_check_headers,
     assessment_record_result,
@@ -277,4 +359,9 @@ ASSESSMENT_REVIEW_TOOLS = [
     assessment_evaluate_scenario,
     assessment_prioritize_kev,
 ]
-ASSESSMENT_TOOLS = [assessment_initialize, assessment_import, *ASSESSMENT_REVIEW_TOOLS]
+ASSESSMENT_TOOLS = [
+    assessment_initialize,
+    assessment_import,
+    assessment_asvs_initialize,
+    *ASSESSMENT_REVIEW_TOOLS,
+]

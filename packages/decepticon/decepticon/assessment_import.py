@@ -305,11 +305,17 @@ def render_report(report: dict[str, Any]) -> str:
     totals = _object(report.get("totals", {}))
     counts = _object(report.get("status_counts", {}))
     complete = "Complete" if report.get("complete") is True else "Incomplete"
+    asvs = isinstance(report.get("catalog"), dict) and report["catalog"].get("standard") == "ASVS"
+    notice = (
+        report.get("baseline_description", "Reviewer-attested ASVS review")
+        if asvs
+        else "not full ASVS coverage."
+    )
     lines = [
-        "# Web/API assessment",
+        "# ASVS application review" if asvs else "# Web/API assessment",
         "",
         f"Engagement: {_markdown(report.get('engagement_name', 'unspecified'))}",
-        f"Baseline: {_markdown(report.get('baseline', 'minimum web/API'))}; not full ASVS coverage.",
+        f"Baseline: {_markdown(report.get('baseline', 'minimum web/API'))}; {_markdown(notice)}",
         f"Assessment status: **{complete}**",
         "Completion concerns only this baseline and does not mean no vulnerabilities were found.",
         "",
@@ -318,8 +324,25 @@ def render_report(report: dict[str, Any]) -> str:
         "| Metric | Count |",
         "| --- | ---: |",
     ]
-    for name in ("operations", "cases", "sources", "source_gaps", "gaps", "untrusted"):
-        lines.append(f"| {name.replace('_', ' ')} | {_markdown(totals.get(name, 'unknown'))} |")
+    metrics = _object(report.get("coverage", {})) if asvs else totals
+    metric_names = (
+        ("total", "applicable", "assessed", "remaining", "not_applicable")
+        if asvs
+        else ("operations", "cases", "sources", "source_gaps", "gaps", "untrusted")
+    )
+    for name in metric_names:
+        lines.append(f"| {name.replace('_', ' ')} | {_markdown(metrics.get(name, 'unknown'))} |")
+    if asvs:
+        release = report["catalog"]
+        lines.extend(
+            [
+                "",
+                f"Application: {_markdown(report.get('asset', 'unknown'))}",
+                f"Attribution: {_markdown(release['attribution'])}; {_markdown(release['license'])} ({_markdown(release['license_url'])}).",
+                f"Source: {_markdown(release['source_url'])}",
+                _markdown(report.get("notice", "")),
+            ]
+        )
     lines.extend(
         ["", "## Status counts (whole assessment)", "", "| Status | Count |", "| --- | ---: |"]
     )
@@ -366,6 +389,9 @@ def render_report(report: dict[str, Any]) -> str:
         evidence = ", ".join(
             str(_object(entry).get("path", "")) for entry in _array(case.get("evidence", []))
         )
+        reason = case.get("reason", case.get("rationale", ""))
+        if asvs and case.get("rationale"):
+            reason = f"{reason} Recorded rationale: {case['rationale']}"
         cells = [
             case.get("case_id", "unknown"),
             f"{case.get('method', '')} {case.get('url', '')}",
@@ -373,7 +399,7 @@ def render_report(report: dict[str, Any]) -> str:
             case.get("control_id", "unknown"),
             case.get("status", "unknown"),
             case.get("evaluation_mode") or "unassessed",
-            case.get("reason", case.get("rationale", "")),
+            reason,
             evidence,
         ]
         lines.append("| " + " | ".join(_markdown(cell) for cell in cells) + " |")
