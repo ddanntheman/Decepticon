@@ -30,12 +30,14 @@ spec §1.4 EP-7, so any new tag silently introduces a new :Tag node.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from decepticon.skill_audit.aliases import resolve_subdomain
+from decepticon.skill_audit.assessment_contract import normalize_assessment_contract
 from decepticon.skill_audit.frontmatter import (
     FrontmatterParseError,
     parse_frontmatter,
@@ -148,7 +150,14 @@ def emit_skill_records(
             "upstream_ref_raw": upstream_raw,
             "commit_sha": commit_sha,
             "built_at": built_at_iso,
+            "assessment_contract_json": None,
         }
+        if "assessment_contract" in metadata:
+            props["assessment_contract_json"] = json.dumps(
+                normalize_assessment_contract(metadata["assessment_contract"]),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
         nodes.append(Node(label="Skill", key_field="name", properties=props))
 
         # === IN_PHASE (when subdomain is set) ===

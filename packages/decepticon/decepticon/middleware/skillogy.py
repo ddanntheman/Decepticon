@@ -99,6 +99,9 @@ Three tools:
 
 Workflow: find_skill to narrow candidates → load_skill on the chosen
 match. Use traverse for "what is related to this skill" questions.
+assessment_contract and allowed_tools are requirements, not grants. Compare
+requirements with assessment_capabilities and actual role/source access; missing
+prerequisites stay blocked. Provenance is not execution evidence or authorization.
 """
 
 

@@ -9,9 +9,12 @@ whole run on one bad file.
 from __future__ import annotations
 
 import re
+from collections.abc import Hashable
 from typing import Any
 
 import yaml
+
+from decepticon.skill_audit.assessment_contract import AssessmentContractError
 
 _FRONTMATTER_RE = re.compile(
     r"^---\s*\n(.*?)\n---\s*(?:\n(.*))?\Z",
@@ -21,6 +24,32 @@ _FRONTMATTER_RE = re.compile(
 
 class FrontmatterParseError(ValueError):
     """Raised when a SKILL.md has no frontmatter or malformed YAML."""
+
+
+class _ContractSafeLoader(yaml.SafeLoader):
+    def construct_mapping(self, node: yaml.Node, deep: bool = False) -> dict[Hashable, Any]:
+        if not isinstance(node, yaml.MappingNode):
+            raise FrontmatterParseError("YAML mapping tag requires a mapping")
+        metadata = [value for key, value in node.value if key.value == "metadata"]
+        if len(metadata) > 1 and any(
+            isinstance(value, yaml.MappingNode)
+            and any(key.value == "assessment_contract" for key, _ in value.value)
+            for value in metadata
+        ):
+            raise AssessmentContractError("assessment_contract has duplicate metadata blocks")
+        contracts = [value for key, value in node.value if key.value == "assessment_contract"]
+        if len(contracts) > 1:
+            raise AssessmentContractError("assessment_contract block is duplicated")
+        for contract in contracts:
+            if isinstance(contract, yaml.MappingNode):
+                fields = [key.value for key, _ in contract.value]
+                if any(not isinstance(field, str) for field in fields) or len(set(fields)) != len(
+                    fields
+                ):
+                    raise AssessmentContractError(
+                        "assessment_contract has invalid or duplicate fields"
+                    )
+        return super().construct_mapping(node, deep=deep)
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
@@ -35,7 +64,11 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
         raise FrontmatterParseError("no YAML frontmatter block found")
     raw_yaml, raw_body = match.group(1), match.group(2) or ""
     try:
-        parsed = yaml.safe_load(raw_yaml)
+        loader = _ContractSafeLoader(raw_yaml)
+        try:
+            parsed = loader.get_single_data()
+        finally:
+            loader.dispose()
     except yaml.YAMLError as exc:
         raise FrontmatterParseError(f"YAML parse failed: {exc}") from exc
     if parsed is None:

@@ -203,6 +203,12 @@ def _assessment_workspace(workspace_path: str) -> Path:
     return resolved
 
 
+class WorkflowRequest(BaseModel):
+    workspace_path: str
+    action: Literal["catalog", "run", "report"]
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class ProvisionEgressRequest(BaseModel):
     policy: dict = Field(
         description="Serialized EgressPolicy "
@@ -339,6 +345,39 @@ def healthz() -> dict[str, str]:
     should target this — it doesn't touch the backend so it stays
     green even during a long-running command."""
     return {"status": "ok"}
+
+
+@app.post("/workflows")
+def workflows(req: WorkflowRequest, _: Annotated[None, Depends(auth)]) -> dict[str, Any]:
+    from decepticon.sandbox_kernel.defensive_workflows import (
+        DefensiveWorkflowRunner,
+        workflow_catalog,
+    )
+
+    workspace = _assessment_workspace(req.workspace_path)
+    try:
+        if req.action == "catalog":
+            return workflow_catalog()
+        runner = DefensiveWorkflowRunner(workspace)
+        if req.action == "report":
+            return runner.report(req.payload.get("run_id"))
+        payload = dict(req.payload)
+        workflow_id = payload.pop("workflow_id", None)
+        return runner.run(workflow_id, payload)
+    except (ValueError, OSError):
+        raise HTTPException(
+            status_code=422, detail="Workflow request is invalid or unavailable"
+        ) from None
+
+
+@app.get("/capabilities")
+def capabilities(_: Annotated[None, Depends(auth)], probe: bool = False) -> dict[str, Any]:
+    from decepticon.sandbox_kernel.capabilities import inspect_capabilities
+
+    try:
+        return inspect_capabilities(probe=probe)
+    except (ValueError, OSError):
+        raise HTTPException(status_code=422, detail="Capability inspection failed") from None
 
 
 # ── BaseSandbox surface ───────────────────────────────────────────────

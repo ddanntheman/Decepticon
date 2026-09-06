@@ -11,6 +11,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from decepticon.skill_audit.aliases import resolve_subdomain
+from decepticon.skill_audit.assessment_contract import (
+    AssessmentContractError,
+    normalize_assessment_contract,
+)
 from decepticon.skill_audit.canonical import load_canonical_subdomains
 from decepticon.skill_audit.frontmatter import (
     FrontmatterParseError,
@@ -30,6 +34,7 @@ class RuleId(enum.Enum):
     MISSING_REQUIRED = "R-missing-required"
     BAD_SUBDOMAIN = "R-bad-subdomain"
     BAD_MITRE_FORMAT = "R-bad-mitre-format"
+    BAD_ASSESSMENT_CONTRACT = "R-bad-assessment-contract"
     NO_ATTRIBUTION = "R-no-attribution"
     DUPLICATE_NAME = "R-duplicate-name"
 
@@ -47,6 +52,8 @@ def validate_skill_file(path: str, text: str) -> list[Violation]:
     """Run every rule against a single SKILL.md and return all violations."""
     try:
         meta, _body = parse_frontmatter(text)
+    except AssessmentContractError as exc:
+        return [Violation(path, RuleId.BAD_ASSESSMENT_CONTRACT, str(exc))]
     except FrontmatterParseError as exc:
         return [Violation(path, RuleId.PARSE_ERROR, str(exc))]
 
@@ -55,6 +62,12 @@ def validate_skill_file(path: str, text: str) -> list[Violation]:
     violations.extend(_check_subdomain(path, meta))
     violations.extend(_check_mitre(path, meta))
     violations.extend(_check_attribution(path, meta))
+    metadata = meta.get("metadata")
+    if isinstance(metadata, dict) and "assessment_contract" in metadata:
+        try:
+            normalize_assessment_contract(metadata["assessment_contract"])
+        except AssessmentContractError as exc:
+            violations.append(Violation(path, RuleId.BAD_ASSESSMENT_CONTRACT, str(exc)))
     return violations
 
 

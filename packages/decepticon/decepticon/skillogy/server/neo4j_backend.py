@@ -25,6 +25,8 @@ import logging
 import re
 from typing import Any
 
+from decepticon.skill_audit.assessment_contract import decode_assessment_contract
+
 log = logging.getLogger(__name__)
 
 # Write-mode Cypher keywords we refuse to forward, even though the
@@ -345,10 +347,15 @@ class Neo4jBackend:
         # Semantic leg only when there is free text AND it can be embedded.
         query_vec = embeddings.embed_text(query) if query else None
         if query_vec is None:
-            return lexical[:limit]
-
-        semantic = self._find_semantic(query_vec, structured, acl_clause, shared, cand_n)
-        return self._rrf_fuse(lexical, semantic, limit)
+            hits = lexical[:limit]
+        else:
+            semantic = self._find_semantic(query_vec, structured, acl_clause, shared, cand_n)
+            hits = self._rrf_fuse(lexical, semantic, limit)
+        for hit in hits:
+            hit["assessment_contract"] = decode_assessment_contract(
+                hit.pop("assessment_contract_json", None)
+            )
+        return hits
 
     # Shared RETURN tail so the lexical and semantic legs yield identical row
     # shapes (``score`` is appended by the semantic leg only and stripped at
@@ -358,7 +365,10 @@ class Neo4jBackend:
     )
     _RETURN_FIELDS = (
         "s.name AS name, s.path AS path, s.subdomain AS subdomain, "
-        "s.description AS description, matched_mitre, matched_tags"
+        "s.description AS description, s.when_to_use AS when_to_use, "
+        "s.allowed_tools AS allowed_tools, s.content_sha256 AS content_sha256, "
+        "s.commit_sha AS commit_sha, s.built_at AS built_at, "
+        "s.assessment_contract_json AS assessment_contract_json, matched_mitre, matched_tags"
     )
 
     def _find_lexical(
