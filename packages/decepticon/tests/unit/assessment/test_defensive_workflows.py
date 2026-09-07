@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import socket
 import ssl
 import time
+from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,7 @@ from typing import Any
 import pytest
 
 from decepticon.sandbox_kernel import defensive_workflows as workflows
+from decepticon.sandbox_kernel._workflow_storage import WorkflowStorage, WorkflowStorageError
 from decepticon.sandbox_kernel.assessment import AssessmentStore
 from decepticon.sandbox_kernel.bounded_process import CommandResult
 from decepticon.sandbox_kernel.defensive_workflows import (
@@ -54,6 +57,171 @@ def capture(**overrides: Any) -> dict[str, Any]:
         },
         "body": "synthetic-private-body",
     } | overrides
+
+
+def test_artifact_descriptor_closes_when_stream_initialization_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    from decepticon.sandbox_kernel._workflow_storage import WorkflowStorage, WorkflowStorageError
+
+    path = artifact(tmp_path, capture())
+    storage = WorkflowStorage(tmp_path)
+    descriptors: list[int] = []
+    closed: set[int] = set()
+    original_close = os.close
+
+    def fail_open(descriptor: int, *args: Any, **kwargs: Any) -> Any:
+        descriptors.append(descriptor)
+        raise OSError("fixture stream initialization failure")
+
+    def close(descriptor: int) -> None:
+        closed.add(descriptor)
+        original_close(descriptor)
+
+    monkeypatch.setattr(os, "fdopen", fail_open)
+    monkeypatch.setattr(os, "close", close)
+    try:
+        with pytest.raises(WorkflowStorageError):
+            storage.read(path)
+        assert len(descriptors) == 1
+        with pytest.raises(OSError):
+            os.fstat(descriptors[0])
+    finally:
+        for descriptor in descriptors:
+            if descriptor not in closed:
+                original_close(descriptor)
+
+
+@pytest.fixture
+def tracked_descriptors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[tuple[set[int], list[int]]]:
+    live: set[int] = set()
+    counts: list[int] = []
+    original_open, original_close = os.open, os.close
+
+    def open_descriptor(*args: Any, **kwargs: Any) -> int:
+        descriptor = original_open(*args, **kwargs)
+        live.add(descriptor)
+        counts.append(len(live))
+        return descriptor
+
+    def close_descriptor(descriptor: int) -> None:
+        original_close(descriptor)
+        live.remove(descriptor)
+
+    monkeypatch.setattr(os, "open", open_descriptor)
+    monkeypatch.setattr(os, "close", close_descriptor)
+    try:
+        yield live, counts
+    finally:
+        for descriptor in live:
+            original_close(descriptor)
+
+
+def test_evidence_descriptor_closes_when_stream_initialization_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tracked_descriptors: tuple[set[int], list[int]],
+) -> None:
+    storage = WorkflowStorage(tmp_path)
+    nonce = storage.new_run()
+
+    def fail_open(*args: Any, **kwargs: Any) -> Any:
+        raise OSError("fixture stream initialization failure")
+
+    monkeypatch.setattr(os, "fdopen", fail_open)
+    with pytest.raises(WorkflowStorageError):
+        storage.write(nonce, "fixture.json", b"{}")
+    assert not tracked_descriptors[0]
+
+
+def test_directory_walk_bounds_handles_for_deep_paths_and_unicode_workspaces(
+    tmp_path: Path, tracked_descriptors: tuple[set[int], list[int]]
+) -> None:
+    workspace = tmp_path / "workspace with spaces" / "資料"
+    workspace.mkdir(parents=True)
+    storage = WorkflowStorage(workspace)
+    parts = tuple(f"p{index}" for index in range(64))
+    with storage.directory(parts, create=True) as parent:
+        assert os.path.samestat(os.fstat(parent), workspace.joinpath(*parts).stat())
+        assert not os.get_inheritable(parent)
+    path = artifact(workspace, capture(), "/".join((*parts, "input.json")))
+    reference, raw = storage.read(path)
+    assert reference["path"] == path
+    assert json.loads(raw) == capture()
+    live, counts = tracked_descriptors
+    assert not live
+    assert max(counts) == 2
+
+
+@pytest.mark.parametrize(
+    ("operation", "fail_after"),
+    [("open", 2), ("dup2", 1), ("mkdir", 2), ("fsync", 2), ("fstat", 1)],
+)
+def test_directory_walk_closes_descriptors_when_a_filesystem_operation_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tracked_descriptors: tuple[set[int], list[int]],
+    operation: str,
+    fail_after: int,
+) -> None:
+    storage = WorkflowStorage(tmp_path)
+    original = getattr(os, operation)
+    calls = 0
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls == fail_after:
+            raise OSError("fixture directory operation failure")
+        return original(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, operation, fail)
+        with pytest.raises(WorkflowStorageError):
+            with storage.directory(("assessment", "workflows"), create=True):
+                pytest.fail("Directory acquisition did not fail")
+    assert not tracked_descriptors[0]
+
+
+def test_directory_walk_closes_descriptors_when_the_consumer_raises(
+    tmp_path: Path, tracked_descriptors: tuple[set[int], list[int]]
+) -> None:
+    storage = WorkflowStorage(tmp_path)
+    with pytest.raises(RuntimeError, match="fixture consumer failure"):
+        try:
+            with storage.directory(("assessment", "workflows"), create=True):
+                raise RuntimeError("fixture consumer failure")
+        finally:
+            assert not tracked_descriptors[0]
+
+
+@pytest.mark.parametrize("replacement", ["directory", "workspace_symlink", "ancestor_symlink"])
+def test_directory_walk_rejects_replaced_workspaces_and_symlinked_ancestors(
+    tmp_path: Path, tracked_descriptors: tuple[set[int], list[int]], replacement: str
+) -> None:
+    ancestor = tmp_path / "ancestor"
+    workspace = ancestor / "workspace"
+    workspace.mkdir(parents=True)
+    storage = WorkflowStorage(workspace)
+    if replacement == "ancestor_symlink":
+        moved = tmp_path / "moved"
+        ancestor.rename(moved)
+        ancestor.symlink_to(moved, target_is_directory=True)
+    else:
+        moved = ancestor / "moved"
+        workspace.rename(moved)
+        if replacement == "workspace_symlink":
+            workspace.symlink_to(moved, target_is_directory=True)
+        else:
+            workspace.mkdir()
+    with pytest.raises(WorkflowStorageError):
+        with storage.directory(()):
+            pytest.fail("Replaced workspace was accepted")
+    assert not tracked_descriptors[0]
 
 
 def test_capture_review_is_durable_redacted_and_separate_from_coverage(tmp_path: Path) -> None:
@@ -851,12 +1019,14 @@ def test_tls_observation_pins_socket_preserves_sni_and_never_disables_validation
     class Context:
         check_hostname = True
         verify_mode = ssl.CERT_REQUIRED
+        minimum_version = ssl.TLSVersion.MINIMUM_SUPPORTED
 
         def wrap_socket(
             self, sock: Transport, *, server_hostname: str, do_handshake_on_connect: bool
         ) -> Transport:
             assert self.check_hostname is True
             assert self.verify_mode == ssl.CERT_REQUIRED
+            assert self.minimum_version == ssl.TLSVersion.TLSv1_2
             assert do_handshake_on_connect is False
             authorities.append(server_hostname)
             return sock

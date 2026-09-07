@@ -6,7 +6,7 @@ import os
 import re
 import stat
 from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -41,6 +41,19 @@ NON_ASSURANCE: dict[str, Any] = {
 }
 
 
+@contextmanager
+def _directory_descriptor(parent: int, component: str) -> Iterator[int]:
+    if component in {"", ".", ".."} or os.path.basename(component) != component:
+        raise WorkflowStorageError("Invalid workflow directory component")
+    descriptor = os.open(
+        os.path.basename(component), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent
+    )
+    try:
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
 class WorkflowStorage:
     def __init__(self, workspace: str | Path) -> None:
         try:
@@ -55,14 +68,13 @@ class WorkflowStorage:
     @contextmanager
     def directory(self, parts: tuple[str, ...], *, create: bool = False) -> Iterator[int]:
         try:
-            with ExitStack() as opened:
-                parent = os.open(self.workspace.anchor, os.O_RDONLY | os.O_DIRECTORY)
-                opened.callback(os.close, parent)
+            parent = os.open(os.path.sep, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                # Replace the owned parent handle instead of retaining every ancestor.
+                # Each child has a lexical lifetime; depth uses neither extra FDs nor recursion.
                 for part in self.workspace.parts[1:]:
-                    parent = os.open(
-                        part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent
-                    )
-                    opened.callback(os.close, parent)
+                    with _directory_descriptor(parent, part) as child:
+                        os.dup2(child, parent, inheritable=False)
                 info = os.fstat(parent)
                 if self._identity is not None and (info.st_dev, info.st_ino) != self._identity:
                     raise WorkflowStorageError("Workflow workspace identity changed")
@@ -72,14 +84,18 @@ class WorkflowStorage:
                     if create:
                         try:
                             os.mkdir(part, mode=0o700, dir_fd=parent)
-                            os.fsync(parent)
                         except FileExistsError:
-                            pass
-                    parent = os.open(
-                        part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent
-                    )
-                    opened.callback(os.close, parent)
+                            if not stat.S_ISDIR(
+                                os.stat(part, dir_fd=parent, follow_symlinks=False).st_mode
+                            ):
+                                raise WorkflowStorageError("Workflow directory is unsafe") from None
+                        else:
+                            os.fsync(parent)
+                    with _directory_descriptor(parent, part) as child:
+                        os.dup2(child, parent, inheritable=False)
                 yield parent
+            finally:
+                os.close(parent)
         except (OSError, AttributeError) as exc:
             raise WorkflowStorageError(
                 "Workflow storage is missing, unsafe, or unavailable"
@@ -92,21 +108,35 @@ class WorkflowStorage:
                 raise WorkflowInputError(
                     "artifact_path must be a canonical workspace-relative file"
                 )
+            candidate = os.path.normpath(os.path.join(str(self.workspace), str(path)))
+            if not candidate.startswith(str(self.workspace).rstrip(os.sep) + os.sep):
+                raise WorkflowInputError("Artifact path escapes the workflow workspace")
             with self.directory(path.parts[:-1]) as parent:
                 descriptor = os.open(
-                    path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent
+                    os.path.basename(candidate),
+                    os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                    dir_fd=parent,
                 )
-                with os.fdopen(descriptor, "rb") as stream:
-                    before = os.fstat(stream.fileno())
-                    if not stat.S_ISREG(before.st_mode) or before.st_size > maximum:
-                        raise WorkflowStorageError("Artifact must be a bounded regular file")
-                    raw = stream.read(maximum + 1)
-                    after = os.fstat(stream.fileno())
-                    if len(raw) != before.st_size or any(
-                        getattr(before, field) != getattr(after, field)
-                        for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
-                    ):
-                        raise WorkflowStorageError("Artifact changed while being read")
+                try:
+                    with os.fdopen(descriptor, "rb", closefd=False) as stream:
+                        before = os.fstat(stream.fileno())
+                        if not stat.S_ISREG(before.st_mode) or before.st_size > maximum:
+                            raise WorkflowStorageError("Artifact must be a bounded regular file")
+                        raw = stream.read(maximum + 1)
+                        after = os.fstat(stream.fileno())
+                        if len(raw) != before.st_size or any(
+                            getattr(before, field) != getattr(after, field)
+                            for field in (
+                                "st_dev",
+                                "st_ino",
+                                "st_size",
+                                "st_mtime_ns",
+                                "st_ctime_ns",
+                            )
+                        ):
+                            raise WorkflowStorageError("Artifact changed while being read")
+                finally:
+                    os.close(descriptor)
             return {"path": str(path), "sha256": _sha(raw), "size_bytes": len(raw)}, raw
         except AssessmentError as exc:
             raise WorkflowInputError(
@@ -164,11 +194,14 @@ class WorkflowStorage:
             descriptor = os.open(
                 name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent
             )
-            with os.fdopen(descriptor, "wb") as stream:
-                stream.write(raw)
-                stream.flush()
-                os.fchmod(stream.fileno(), 0o400)
-                os.fsync(stream.fileno())
+            try:
+                with os.fdopen(descriptor, "wb", closefd=False) as stream:
+                    stream.write(raw)
+                    stream.flush()
+                    os.fchmod(stream.fileno(), 0o400)
+                    os.fsync(stream.fileno())
+            finally:
+                os.close(descriptor)
             os.fsync(parent)
         return {"path": "/".join((*parts, name)), "sha256": _sha(raw), "size_bytes": len(raw)}
 
