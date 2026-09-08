@@ -307,27 +307,95 @@ def _service_devices(service: dict) -> list[str]:
     return out
 
 
-def test_sandbox_maps_tun_device():
-    """The sandbox must map /dev/net/tun so TUN-based pivots work.
+TUN_OVERLAY = REPO_ROOT / "docker-compose.tun.yml"
 
-    ligolo-ng's Layer-3 pivot (baked into the base image in Phase B and
-    taught by the lateral-movement skill) opens /dev/net/tun to build its
-    ``tun`` interface. NET_ADMIN alone lets the container *configure* an
-    interface but not open the device node — without this mapping the tool
-    launches but can never tunnel. This fences the mapping so a compose
-    edit can't silently strip it and regress ligolo to non-operational.
+
+def _rendered_with_overlay(*overlays: Path) -> dict:
+    """Render the base compose plus one or more overlay files."""
+    if shutil.which("docker") is None:
+        pytest.skip("docker CLI not available")
+    args = ["docker", "compose", "-f", str(COMPOSE)]
+    for overlay in overlays:
+        args += ["-f", str(overlay)]
+    args.append("config")
+    result = subprocess.run(
+        args,
+        env={**os.environ, "COMPOSE_PROFILES": "c2-sliver,reversing,cli"},
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        pytest.fail(f"docker compose config failed:\n{result.stderr}\n{result.stdout}")
+    return yaml.safe_load(result.stdout)
+
+
+def test_base_sandbox_does_not_map_tun_device():
+    """The default sandbox must boot on hosts without /dev/net/tun.
+
+    An unconditional device mapping fails container creation on any host
+    whose kernel lacks the tun module, making TUN a prerequisite for every
+    sandbox user. TUN is opt-in via docker-compose.tun.yml instead, so the
+    base file must stay device-free.
     """
-    services = _rendered_compose()["services"]
-    sandbox = services.get("sandbox")
+    sandbox = _rendered_compose()["services"].get("sandbox")
     if sandbox is None:
         pytest.fail("sandbox service missing from rendered compose")
     devices = _service_devices(sandbox)
+    assert not any(d.split(":")[0] == "/dev/net/tun" for d in devices), (
+        "base docker-compose.yml maps /dev/net/tun on the sandbox service; "
+        "this breaks `compose up` on hosts without the tun module. Move the "
+        f"mapping to docker-compose.tun.yml. devices={devices!r}"
+    )
+
+
+def test_tun_overlay_maps_device():
+    """The opt-in overlay adds /dev/net/tun so ligolo can tunnel.
+
+    ligolo-ng's Layer-3 pivot opens /dev/net/tun to build its ``tun``
+    interface; NET_ADMIN (granted in the base file) authorizes configuring
+    the interface but not opening the device node. This fences the overlay
+    so an edit can't silently strip the mapping and regress ligolo to
+    non-operational when TUN is explicitly requested.
+    """
+    if not TUN_OVERLAY.exists():
+        pytest.fail(f"{TUN_OVERLAY.name} is missing")
+    sandbox = _rendered_with_overlay(TUN_OVERLAY)["services"].get("sandbox")
+    if sandbox is None:
+        pytest.fail("sandbox service missing from rendered compose+overlay")
+    devices = _service_devices(sandbox)
     assert any(d.split(":")[0] == "/dev/net/tun" for d in devices), (
-        "sandbox service does not map /dev/net/tun; ligolo-ng and other "
-        f"TUN-based pivots cannot build their interface. devices={devices!r}\n"
-        "Fix: add '/dev/net/tun:/dev/net/tun' to the sandbox service's "
-        "`devices:` list (NET_ADMIN authorizes the interface; the device "
-        "node must still be mapped in)."
+        "docker-compose.tun.yml does not map /dev/net/tun onto the sandbox "
+        f"service; ligolo-ng cannot build its interface. devices={devices!r}"
+    )
+
+
+RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
+
+
+def test_tun_overlay_is_release_tracked():
+    """docker-compose.tun.yml must be pinned in config-checksums.txt.
+
+    The installer and launcher self-update fetch config files from
+    raw.githubusercontent.com and verify each against the release-pinned
+    config-checksums.txt manifest before writing. If the TUN overlay is
+    not in the ``sha256sum`` line that builds that manifest, either it is
+    never shipped to release/updated installs (operators can't enable
+    ligolo Layer-3 pivoting) or it ships unverified (a tampered CDN copy
+    would pass) — both regress the opt-in TUN wiring. This fences the
+    manifest generation so the overlay stays release-tracked.
+    """
+    if not RELEASE_WORKFLOW.exists():
+        pytest.fail(f"{RELEASE_WORKFLOW} is missing")
+    text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    sha_lines = [
+        ln for ln in text.splitlines() if "sha256sum" in ln and "config-checksums.txt" in ln
+    ]
+    assert sha_lines, "no sha256sum line generating config-checksums.txt found in release.yml"
+    assert any("docker-compose.tun.yml" in ln for ln in sha_lines), (
+        "docker-compose.tun.yml is not in the config-checksums.txt sha256sum "
+        f"line; release installs can't verify/enable the TUN overlay. lines={sha_lines!r}"
     )
 
 

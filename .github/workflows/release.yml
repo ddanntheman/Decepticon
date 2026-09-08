@@ -106,8 +106,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Configuration-file integrity manifest. The OSS installer and
-      # launcher self-update download docker-compose.yml / litellm.yaml /
-      # .env.example from raw.githubusercontent.com and used to apply them
+      # launcher self-update download docker-compose.yml /
+      # docker-compose.tun.yml / litellm.yaml / .env.example from
+      # raw.githubusercontent.com and used to apply them
       # without any integrity check, which made GitHub-CDN tampering a
       # one-shot RCE vector (the compose file pulls arbitrary images). We
       # publish a sha256sum-format manifest as a release asset; the
@@ -116,7 +117,7 @@ jobs:
       - name: Generate config manifest
         run: |
           set -euo pipefail
-          sha256sum docker-compose.yml config/litellm.yaml .env.example > config-checksums.txt
+          sha256sum docker-compose.yml docker-compose.tun.yml config/litellm.yaml .env.example > config-checksums.txt
           cat config-checksums.txt
 
       - name: Upload config manifest to draft release

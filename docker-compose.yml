@@ -220,11 +220,11 @@ services:
     #     msfconsole that drop privileges internally).
     #   - no-new-privileges blocks setuid escalation within the
     #     container even if a tool ships with a setuid binary.
-    #   - /dev/net/tun is mapped in (devices: below) so TUN-based pivots
-    #     (ligolo-ng's Layer-3 tunnel) can open the device. NET_ADMIN
-    #     (already granted) authorizes creating the tun interface; mapping
-    #     the node avoids granting MKNOD. This adds one device, not a
-    #     capability, so it does not widen the container's privilege set.
+    #   - TUN-based pivots (ligolo-ng's Layer-3 tunnel) need the host
+    #     /dev/net/tun device. It is NOT mapped here: an unconditional
+    #     device mapping breaks `compose up` on any host without the tun
+    #     module, making TUN a prerequisite for every sandbox user. It is
+    #     opt-in via the docker-compose.tun.yml overlay instead.
     #   - mem_limit caps a runaway scan / fuzzer at 4G so it can't
     #     starve the management plane.
     #   - pids_limit was already 1024; kept.
@@ -247,16 +247,6 @@ services:
       - KILL
     security_opt:
       - no-new-privileges:true
-    devices:
-      # Host TUN device for ligolo-ng / TUN-based Layer-3 pivoting. The
-      # tool builds a `tun` interface (see the lateral-movement skill),
-      # which needs both NET_ADMIN (granted above) and /dev/net/tun. Mapping
-      # the node in (rather than adding MKNOD so the container can mknod it)
-      # keeps the privilege delta to a single device. Requires the host
-      # `tun` module — standard on Linux hosts and the Docker Desktop /
-      # Podman-machine VMs; on a host without it, `modprobe tun` (or drop
-      # this line to boot without TUN pivoting).
-      - /dev/net/tun:/dev/net/tun
     mem_limit: 4g
     environment:
       # SANDBOX_DAEMON=1 makes containers/sandbox-entrypoint.sh run the

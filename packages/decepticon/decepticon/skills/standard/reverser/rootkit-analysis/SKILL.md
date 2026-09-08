@@ -19,9 +19,13 @@ Detect and analyze rootkits operating at kernel, boot, and firmware levels — f
 # Quick kernel rootkit scan (Windows, run as admin)
 gmer.exe /scan
 
-# System-wide hidden process / driver detection
-vol -f memory.raw windows.pslist vs windows.psscan
-# Processes in psscan but NOT in pslist → hidden by DKOM
+# System-wide hidden process / driver detection (one plugin per run)
+vol -f memory.raw windows.pslist > pslist.txt
+vol -f memory.raw windows.psscan > psscan.txt
+# PIDs in psscan.txt but NOT in pslist.txt → hidden by DKOM (compare on
+# the numeric PID column, not the image name — distinct processes can
+# share an executable name and would mask each other)
+comm -13 <(awk '$1 ~ /^[0-9]+$/ {print $1}' pslist.txt | sort -u) <(awk '$1 ~ /^[0-9]+$/ {print $1}' psscan.txt | sort -u)
 
 # UEFI firmware extraction and analysis
 chipsec_util.py spi dump firmware.bin
@@ -54,7 +58,7 @@ Detect rootkits that hook user-mode APIs to hide artifacts.
 # Use API Monitor or manually check ntdll.dll integrity
 
 # Volatility: detect IAT hooks in processes
-vol3 -f memory.raw windows.iat --pid <PID>
+vol -f memory.raw windows.iat --pid <PID>
 
 # Check for LD_PRELOAD / dylib injection (Linux/macOS)
 # Linux:
@@ -63,7 +67,7 @@ echo $LD_PRELOAD
 cat /etc/ld.so.preload
 
 # Windows: compare loaded DLLs against known-good baseline
-vol3 -f memory.raw windows.dlllist --pid <PID>
+vol -f memory.raw windows.dlllist --pid <PID>
 # Look for: DLLs loaded from temp dirs, DLLs not on disk, unknown publishers
 
 # Cross-view detection: compare user-mode API results vs kernel data
@@ -92,26 +96,26 @@ Detect DKOM, SSDT hooks, and malicious drivers.
 #          hidden processes, hidden drivers, hidden files, hidden registry
 
 # Volatility cross-view process detection
-vol3 -f memory.raw windows.pslist > pslist.txt
-vol3 -f memory.raw windows.psscan > psscan.txt
+vol -f memory.raw windows.pslist > pslist.txt
+vol -f memory.raw windows.psscan > psscan.txt
 # Diff: processes in psscan but not pslist are DKOM-hidden
 comm -23 <(sort psscan.txt) <(sort pslist.txt)
 
 # SSDT hook detection
-vol3 -f memory.raw windows.ssdt
+vol -f memory.raw windows.ssdt
 # All entries should point to ntoskrnl.exe or win32k.sys
 # Entries pointing elsewhere → hooked
 
 # Driver analysis
-vol3 -f memory.raw windows.drvscan
-vol3 -f memory.raw windows.modules
+vol -f memory.raw windows.drvscan
+vol -f memory.raw windows.modules
 # Look for:
 # - Drivers not on disk (loaded from memory only)
 # - Drivers loaded from unusual paths (temp, appdata)
 # - Drivers with no digital signature
 
 # IRP hook detection — malicious drivers hooking filesystem IRPs
-vol3 -f memory.raw windows.driverirp
+vol -f memory.raw windows.driverirp
 # NTFS driver IRP_MJ_DIRECTORY_CONTROL hooked → file hiding
 # NTFS driver IRP_MJ_CREATE hooked → file access interception
 
@@ -165,7 +169,7 @@ sigcheck.exe -u -e C:\Windows\System32\drivers\*.sys
 # -u shows unsigned drivers; -e scans executables only
 
 # Volatility: find recently loaded drivers
-vol3 -f memory.raw windows.drvscan | sort -k3 -t'|'
+vol -f memory.raw windows.drvscan | sort -k3 -t'|'
 ```
 
 ## 4. Bootkit Analysis
@@ -315,7 +319,7 @@ EOF
 # CPUID instruction under hypervisor takes ~1000+ cycles vs ~100 native
 
 # Check for known hypervisor rootkit artifacts
-vol3 -f memory.raw windows.modules | grep -iE "vbox\|vmware\|hv\|hyperv"
+vol -f memory.raw windows.modules | grep -iE "vbox\|vmware\|hv\|hyperv"
 # But a true ring-1 rootkit may not appear in module lists
 
 # Physical memory access test (blocked by hypervisor)
@@ -353,10 +357,10 @@ cat /proc/net/tcp /proc/net/tcp6 > proc_net.txt
 # Compare: hidden connections appear in /proc/net but not ss
 
 # Volatility for Linux memory images
-vol3 -f memory.lime linux.bash
-vol3 -f memory.lime linux.check_modules
-vol3 -f memory.lime linux.hidden_modules
-vol3 -f memory.lime linux.check_syscall
+vol -f memory.lime linux.bash
+vol -f memory.lime linux.check_modules
+vol -f memory.lime linux.hidden_modules
+vol -f memory.lime linux.check_syscall
 ```
 
 ## Tools & Resources
