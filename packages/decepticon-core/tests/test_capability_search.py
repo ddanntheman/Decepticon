@@ -7,10 +7,12 @@ import pytest
 from decepticon_core.capabilities import (
     BINARY_TO_CAPABILITY,
     CAPABILITY_REGISTRY,
+    ROLE_CAPABILITY_POLICY,
     Capability,
     Lifecycle,
     RiskTier,
     reach_instruction,
+    role_capability_policy,
     search_capabilities,
 )
 
@@ -114,3 +116,37 @@ def test_reach_instruction_covers_every_registry_delivery() -> None:
     for cap in CAPABILITY_REGISTRY:
         text = reach_instruction(cap)
         assert text and text != cap.delivery
+
+
+# ── Role/phase/risk-aware discovery policy ──────────────────────────────
+
+_REGISTRY_PHASES = {p for cap in CAPABILITY_REGISTRY for p in cap.phases}
+
+
+def test_role_capability_policy_lookup() -> None:
+    assert role_capability_policy(None) is None
+    assert role_capability_policy("") is None
+    assert role_capability_policy("not-a-role") is None
+    recon = role_capability_policy("recon")
+    assert recon is not None
+    assert recon.max_risk is RiskTier.BOUNDED_ACTIVE
+    assert "TA0043" in recon.phases
+
+
+def test_role_policy_phases_are_real_registry_tactics() -> None:
+    # A policy that highlights a phase no tool declares would silently
+    # surface nothing — keep the mapping honest against the registry.
+    for role, policy in ROLE_CAPABILITY_POLICY.items():
+        for phase in policy.phases:
+            assert phase in _REGISTRY_PHASES, f"{role} highlights unknown phase {phase}"
+
+
+def test_role_ceiling_narrows_search() -> None:
+    # recon's bounded_active ceiling must exclude the intrusive+ tools an
+    # unfiltered search returns.
+    recon_policy = role_capability_policy("recon")
+    assert recon_policy is not None
+    recon_ceiling = recon_policy.max_risk
+    scoped = search_capabilities(max_risk=recon_ceiling.name.lower())
+    assert all(cap.risk_tier.value <= recon_ceiling.value for cap in scoped)
+    assert len(scoped) < len(search_capabilities())

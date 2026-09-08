@@ -331,6 +331,37 @@ def test_build_tools_plugin_replaces_by_name():
     assert baseline["primary"] not in result
 
 
+def test_build_tools_role_scopes_capability_search():
+    """The default ``capability_search`` is swapped for a role-bound one."""
+    from decepticon.tools.discovery import capability_search
+
+    baseline = {"capability_search": capability_search, "keep": MagicMock(name="keep")}
+    with patch.object(build_module, "entry_points", return_value=[]):
+        with patch.object(plugin_loader, "entry_points", return_value=[]):
+            result = build_module.build_tools(role="recon", standard_tools=baseline)
+    names = {getattr(t, "name", None) for t in result}
+    assert "capability_search" in names
+    # Same tool name, but a distinct role-scoped instance replaced the default.
+    scoped = next(t for t in result if getattr(t, "name", None) == "capability_search")
+    assert scoped is not capability_search
+    assert baseline["keep"] in result
+
+
+def test_build_tools_leaves_plugin_capability_search_untouched():
+    """A plugin that replaces ``capability_search`` keeps its own instance."""
+    from decepticon.tools.discovery import capability_search
+
+    replacement = MagicMock(name="plugin_capability_search")
+    replacement.name = "capability_search"
+    bundle = PluginBundle(replaced_tools={"capability_search": replacement})
+    eps = [_FakeEntryPoint("vendor", "vendor:bundle", bundle)]
+    baseline = {"capability_search": capability_search}
+    with patch.object(build_module, "entry_points", return_value=eps):
+        with patch.object(plugin_loader, "entry_points", return_value=[]):
+            result = build_module.build_tools(role="recon", standard_tools=baseline)
+    assert replacement in result
+
+
 # ── Prompt override resolution ───────────────────────────────────────
 
 
