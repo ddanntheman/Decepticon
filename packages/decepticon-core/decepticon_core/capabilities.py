@@ -24,10 +24,14 @@ Lifecycle values:
 
 Delivery classes:
 
-  * ``base`` — apt-installed in the default sandbox image.
+  * ``base`` — pre-installed in the default sandbox image (run directly
+    with bash). Sourced from apt (``apt_packages``) or, for tools with no
+    apt package, pip-installed at BUILD time (``pip_packages``).
   * ``profile:<name>`` — available when the named Compose profile is
     active (e.g. ``profile:reversing``, ``profile:ad``).
-  * ``pip`` — pip-installed in the sandbox at image build time.
+  * ``pip`` — NOT pre-installed; the agent installs it at runtime with
+    ``pip3 install --break-system-packages`` (Kali's Python is
+    externally managed).
   * ``sidecar`` — runs as a separate container service.
   * ``external`` — requires an external provider (GPU, hardware, cloud).
 """
@@ -77,6 +81,11 @@ class Capability:
 
     apt_packages: tuple[str, ...] = ()
     """Debian/Kali package names that supply the binaries (base delivery)."""
+
+    pip_packages: tuple[str, ...] = ()
+    """PyPI names pip-installed at image BUILD time for base-delivery tools
+    that have no apt package (e.g. ``volatility3``). Distinct from the
+    ``pip`` *delivery* class, which the agent installs at runtime."""
 
     risk_tier: RiskTier = RiskTier.BOUNDED_ACTIVE
 
@@ -715,36 +724,67 @@ CAPABILITY_REGISTRY: tuple[Capability, ...] = (
         risk_tier=RiskTier.PASSIVE,
         lifecycle=Lifecycle.SUPPORTED,
     ),
-    # ── Planned (not yet installed — tracked for admission) ──
+    # ── Tunneling / pivoting (baked into the base image) ──
     Capability(
         id="chisel",
         category="tunneling",
         description="HTTP-based TCP/UDP tunnel",
         binaries=("chisel",),
         delivery="base",
+        apt_packages=("chisel",),
         risk_tier=RiskTier.HIGH_IMPACT,
         phases=("TA0008",),
-        lifecycle=Lifecycle.PLANNED,
+        lifecycle=Lifecycle.SUPPORTED,
     ),
     Capability(
         id="ligolo-ng",
         category="tunneling",
         description="Layer-3 tun tunnel (no SOCKS required)",
-        binaries=("ligolo-ng",),
+        # Kali's ligolo-ng package ships the proxy (server) + agent as
+        # ligolo-proxy / ligolo-agent — there is no ``ligolo-ng`` binary.
+        binaries=("ligolo-proxy", "ligolo-agent"),
         delivery="base",
+        apt_packages=("ligolo-ng",),
         risk_tier=RiskTier.HIGH_IMPACT,
         phases=("TA0008",),
-        lifecycle=Lifecycle.PLANNED,
+        lifecycle=Lifecycle.SUPPORTED,
+    ),
+    # ── Fuzzing (baked into the base image) ──
+    Capability(
+        id="afl++",
+        category="fuzzing",
+        description="Coverage-guided fuzzer (american fuzzy lop plus plus)",
+        binaries=("afl-fuzz",),
+        delivery="base",
+        apt_packages=("afl++",),
+        risk_tier=RiskTier.INTRUSIVE,
+        phases=("TA0002",),
+        lifecycle=Lifecycle.SUPPORTED,
     ),
     Capability(
         id="volatility3",
         category="dfir",
         description="Memory forensics framework",
         binaries=("vol",),
-        delivery="pip",
+        # No apt package in kali-rolling; pip-installed at build time so it
+        # is always present and runnable directly via bash.
+        delivery="base",
+        pip_packages=("volatility3",),
         risk_tier=RiskTier.PASSIVE,
-        lifecycle=Lifecycle.PLANNED,
+        lifecycle=Lifecycle.SUPPORTED,
     ),
+    Capability(
+        id="plaso",
+        category="dfir",
+        description="Super timeline forensic artifact extraction (log2timeline)",
+        # Kali prefixes plaso's tools: plaso-log2timeline / plaso-psort / ...
+        binaries=("plaso-log2timeline", "plaso-psort", "plaso-pinfo"),
+        delivery="base",
+        apt_packages=("plaso",),
+        risk_tier=RiskTier.PASSIVE,
+        lifecycle=Lifecycle.SUPPORTED,
+    ),
+    # ── Planned (not yet installed — tracked for admission) ──
     Capability(
         id="certipy",
         category="ad",
@@ -791,6 +831,18 @@ def base_apt_packages() -> list[str]:
     for cap in CAPABILITY_REGISTRY:
         if cap.delivery == "base" and cap.lifecycle in (Lifecycle.SUPPORTED, Lifecycle.PREVIEW):
             pkgs.extend(cap.apt_packages)
+    return sorted(set(pkgs))
+
+
+def base_pip_packages() -> list[str]:
+    """PyPI packages pip-installed at BUILD time for base-delivery tools.
+
+    These have no apt package, so the sandbox Dockerfile installs them via
+    ``pip3 install``. A drift test keeps this in lockstep with that line."""
+    pkgs: list[str] = []
+    for cap in CAPABILITY_REGISTRY:
+        if cap.delivery == "base" and cap.lifecycle in (Lifecycle.SUPPORTED, Lifecycle.PREVIEW):
+            pkgs.extend(cap.pip_packages)
     return sorted(set(pkgs))
 
 
@@ -1018,6 +1070,7 @@ def generate_kali_environment_block() -> str:
         "dfir": "DFIR / forensics",
         "reversing": "Reverse engineering",
         "tunneling": "Tunneling / pivoting",
+        "fuzzing": "Fuzzing",
         "runtime": "Scripting / utilities",
     }
 

@@ -103,7 +103,7 @@ def test_reach_instruction_pip_uses_break_system_packages() -> None:
 def test_reach_instruction_planned_tool_is_not_installed() -> None:
     # Planned tools (any delivery) must never be described as installed,
     # or agents will invoke commands that do not exist.
-    for binary in ("chisel", "ligolo-ng", "vol", "certipy"):
+    for binary in ("certipy",):
         cap = BINARY_TO_CAPABILITY[binary]
         assert cap.lifecycle is Lifecycle.PLANNED
         text = reach_instruction(cap)

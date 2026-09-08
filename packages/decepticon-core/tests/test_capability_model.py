@@ -18,10 +18,12 @@ from decepticon_core.capabilities import (
     RiskTier,
     base_apt_packages,
     base_binaries,
+    base_pip_packages,
     capabilities_by_delivery,
     capabilities_by_lifecycle,
     generate_kali_environment_block,
     prompt_categories,
+    reach_instruction,
     security_binaries,
 )
 
@@ -72,10 +74,14 @@ def test_capability_fields_well_formed(cap: Capability) -> None:
 
 @pytest.mark.parametrize("cap", CAPABILITY_REGISTRY, ids=lambda c: c.id)
 def test_base_installed_capabilities_declare_apt_packages(cap: Capability) -> None:
-    """Anything delivered ``base`` and installed must name its apt package(s)
-    so the sandbox-image drift test can verify it."""
+    """Anything delivered ``base`` and installed must name its install
+    source — apt packages (most tools) or pip packages baked at build
+    (tools with no apt package, e.g. volatility3) — so the sandbox-image
+    drift tests can verify it is actually in the image."""
     if cap.delivery == "base" and cap.lifecycle in _INSTALLED:
-        assert cap.apt_packages, f"{cap.id}: base+installed but no apt_packages"
+        assert cap.apt_packages or cap.pip_packages, (
+            f"{cap.id}: base+installed but no apt_packages or pip_packages"
+        )
 
 
 @pytest.mark.parametrize("cap", CAPABILITY_REGISTRY, ids=lambda c: c.id)
@@ -126,8 +132,7 @@ def test_generated_prompt_is_truthful() -> None:
     assert "full kali linux distribution" not in lowered
     # PLANNED (uninstalled) tools must not appear in the installed section.
     installed_section = block.split("**Not yet installed**")[0]
-    assert "chisel" not in installed_section
-    assert "ligolo-ng" not in installed_section
+    assert "certipy" not in installed_section
 
 
 def test_generated_prompt_lists_installed_tools() -> None:
@@ -166,6 +171,46 @@ def test_radare2_and_binwalk_are_base_installed() -> None:
         assert cap.delivery == "base", f"{binary} should be base-delivered"
         assert cap.apt_packages
         assert binary in base_binaries()
+
+
+def test_phase_b_tools_are_baked_into_base_image() -> None:
+    """Phase B promoted chisel/ligolo-ng/afl++/plaso/volatility3 from PLANNED
+    to SUPPORTED base delivery — they must be genuinely reachable (in the
+    base binary set, run-directly reach), not merely listed as planned."""
+    for binary in (
+        "chisel",
+        "ligolo-proxy",
+        "ligolo-agent",
+        "afl-fuzz",
+        "vol",
+        "plaso-log2timeline",
+    ):
+        cap = BINARY_TO_CAPABILITY[binary]
+        assert cap.lifecycle is Lifecycle.SUPPORTED, f"{binary} must be supported"
+        assert cap.delivery == "base", f"{binary} must be base-delivered"
+        assert binary in base_binaries()
+        assert "run it directly" in reach_instruction(cap)
+
+
+def test_volatility3_is_pip_baked_at_build() -> None:
+    """volatility3 has no apt package, so it is base-delivered via a
+    build-time pip install (pip_packages), not the runtime ``pip`` class."""
+    cap = BINARY_TO_CAPABILITY["vol"]
+    assert cap.delivery == "base"
+    assert cap.apt_packages == ()
+    assert cap.pip_packages == ("volatility3",)
+    assert "volatility3" in base_pip_packages()
+    # apt drift set must NOT include it (it is not an apt package).
+    assert "volatility3" not in base_apt_packages()
+
+
+def test_ligolo_binaries_match_kali_package() -> None:
+    """Kali's ligolo-ng ships ligolo-proxy + ligolo-agent — there is no
+    ``ligolo-ng`` binary, so the registry must not advertise one."""
+    cap = BINARY_TO_CAPABILITY["ligolo-proxy"]
+    assert cap.id == "ligolo-ng"
+    assert set(cap.binaries) == {"ligolo-proxy", "ligolo-agent"}
+    assert "ligolo-ng" not in cap.binaries
 
 
 def test_planned_tools_not_in_base_binaries() -> None:

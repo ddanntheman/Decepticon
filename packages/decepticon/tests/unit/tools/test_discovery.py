@@ -62,8 +62,8 @@ def test_invalid_max_risk_returns_error_and_valid_values() -> None:
 
 
 def test_planned_hidden_by_default() -> None:
-    default = _invoke(query="volatility")
-    planned = _invoke(query="volatility", include_planned=True)
+    default = _invoke(query="certipy")
+    planned = _invoke(query="certipy", include_planned=True)
     assert default["count"] == 0
     assert planned["count"] >= 1
 

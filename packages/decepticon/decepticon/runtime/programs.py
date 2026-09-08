@@ -148,6 +148,10 @@ SECURITY_PROGRAMS: frozenset[str] = frozenset(
         "apktool",
         # DFIR
         "yara",
+        "vol",  # volatility3 memory forensics
+        "plaso-log2timeline",
+        "plaso-psort",
+        "plaso-pinfo",
         # reversing / firmware
         "binwalk",
         "ghidra",
@@ -156,6 +160,12 @@ SECURITY_PROGRAMS: frozenset[str] = frozenset(
         "gdb",
         "objdump",
         "checksec",
+        # fuzzing
+        "afl-fuzz",
+        # tunneling / pivoting
+        "chisel",
+        "ligolo-proxy",
+        "ligolo-agent",
     }
 )
 

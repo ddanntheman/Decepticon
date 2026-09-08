@@ -18,7 +18,11 @@ import re
 from pathlib import Path
 
 from decepticon.runtime.programs import KNOWN_PROGRAMS
-from decepticon_core.capabilities import base_apt_packages, security_binaries
+from decepticon_core.capabilities import (
+    base_apt_packages,
+    base_pip_packages,
+    security_binaries,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SANDBOX_DOCKERFILE = _REPO_ROOT / "containers" / "sandbox.Dockerfile"
@@ -130,7 +134,7 @@ def test_prompt_does_not_advertise_uninstalled_tools() -> None:
 
     block = builder._KALI_ENVIRONMENT
     installed_section = block.split("**Not yet installed**")[0]
-    for uninstalled in ("chisel", "ligolo-ng"):
+    for uninstalled in ("certipy",):
         assert uninstalled not in installed_section, (
             f"{uninstalled} is not installed but appears in the prompt's installed section"
         )
@@ -161,6 +165,54 @@ def test_impacket_prompt_uses_real_executable_names() -> None:
     assert "impacket-secretsdump" in block
     assert "impacket-ntlmrelayx" in block
     assert "secretsdump.py" not in block
+
+
+def _dockerfile_build_pip_packages() -> set[str]:
+    """Parse every package named in a build-time ``pip3 install`` RUN in the
+    sandbox Dockerfile (the baked-pip delivery path)."""
+    text = _SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    pkgs: set[str] = set()
+    capturing = False
+    for raw in lines:
+        stripped = raw.strip()
+        if stripped.startswith("#"):
+            continue
+        body = raw.split("#", 1)[0]
+        if "pip3 install" in body or "pip install" in body:
+            capturing = True
+        if capturing:
+            for token in body.replace("\\", " ").split():
+                # Strip surrounding quotes and any version specifier so a
+                # pin like "volatility3>=2" matches the registry name.
+                cleaned = token.strip("'\"")
+                name = re.split(r"[<>=!~\[]", cleaned, maxsplit=1)[0]
+                if _PKG_TOKEN.match(name) and name not in (
+                    "pip",
+                    "pip3",
+                    "install",
+                    "python3",
+                    "python",
+                ):
+                    pkgs.add(name)
+            if not body.rstrip().endswith("\\"):
+                capturing = False
+    return pkgs
+
+
+def test_registry_base_pip_matches_dockerfile() -> None:
+    """Every base tool delivered via a build-time pip install (no apt
+    package, e.g. volatility3) must actually be pip-installed in the
+    sandbox image — no drift between registry ``pip_packages`` and the
+    Dockerfile's ``pip3 install`` lines."""
+    registry = set(base_pip_packages())
+    dockerfile = _dockerfile_build_pip_packages()
+    missing_from_image = registry - dockerfile
+    assert not missing_from_image, (
+        "capabilities declared base+pip but NOT pip-installed in "
+        f"sandbox.Dockerfile: {sorted(missing_from_image)}"
+    )
 
 
 def test_dockerfile_block_parse_sane() -> None:
