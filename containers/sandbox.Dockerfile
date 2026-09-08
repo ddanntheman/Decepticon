@@ -27,48 +27,94 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
     find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i 's|http://|https://|g' {} + 2>/dev/null; \
     apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
+        # ────────────────────────────────────────────────────────────
+        # This apt set is the CANONICAL source of the sandbox's "base"
+        # delivery class. It is kept in lockstep with
+        # packages/decepticon-core/decepticon_core/capabilities.py — the
+        # capability registry whose `delivery == "base"` entries drive the
+        # agent prompt, telemetry allowlist, and discovery tools. A drift
+        # test (tests/test_capability_registry.py) fails CI if this list
+        # and `base_apt_packages()` diverge, so add a Capability entry
+        # whenever you add a package here (and vice-versa).
+        # ────────────────────────────────────────────────────────────
         # ── Core runtime ──
         curl \
         wget \
         python3 \
         python3-pip \
         tmux \
-        # ── Recon ──
+        # ── JavaScript runtime (JSFuck payload encoding/validation) ──
+        nodejs \
+        npm \
+        # ── SSH client + sshpass for lateral movement / multi-host
+        # scenarios (e.g., MHBench OpenStack topologies — attacker pivots
+        # through a jump host via ProxyJump to reach internal ring hosts).
+        openssh-client \
+        sshpass \
+        # ── Recon / enumeration ──
         nmap \
+        masscan \
         dnsutils \
         whois \
         netcat-openbsd \
         iputils-ping \
         subfinder \
-        # ── Exploit & post-exploitation ──
-        hydra \
-        sqlmap \
+        # ── Web discovery / assessment (headless, non-interactive) ──
         nikto \
-        smbclient \
-        exploitdb \
         dirb \
         gobuster \
-        # SSH client + sshpass for lateral movement / multi-host scenarios
-        # (e.g., MHBench OpenStack topologies — attacker pivots through a
-        # jump host via ProxyJump to reach internal ring hosts).
-        openssh-client \
-        sshpass \
-        # ── JavaScript runtime (JSFuck payload encoding/validation) ──
-        nodejs \
-        npm \
-        # ── C2 client (connects to the separate c2-sliver server container) ──
-        sliver \
+        ffuf \
+        feroxbuster \
+        nuclei \
+        wpscan \
+        httpx-toolkit \
+        whatweb \
+        wafw00f \
+        # ── Vulnerability-specific ──
+        sqlmap \
+        commix \
+        dalfox \
+        # ── Credentials / cracking ──
+        hydra \
+        john \
+        hashcat \
+        # ── SMB / network services ──
+        smbclient \
+        enum4linux \
+        netexec \
         # ── AD attack chain — Responder → ntlmrelayx → secretsdump ──
         # responder + python3-impacket are both in kali-rolling apt; they
         # chain together for the canonical internal-network AD attack
         # documented in docs/red-team/tools-techniques.md.
         responder \
         python3-impacket \
+        impacket-scripts \
+        # ── Exploitation frameworks ──
+        exploitdb \
+        metasploit-framework \
+        # ── C2 client (connects to the separate c2-sliver server container) ──
+        sliver \
+        # ── TLS / crypto assessment ──
+        testssl.sh \
+        sslscan \
+        sslyze \
+        # ── Secrets / supply-chain scanning ──
+        gitleaks \
+        trufflehog \
+        # ── Packet capture / network analysis ──
+        tcpdump \
+        tshark \
+        socat \
         # ── Mobile triage host-side (Mobile agent) ──
         # adb + apktool are in kali-rolling apt and let the agent do quick
         # APK / device triage from the bash tool without leaving the sandbox.
         adb \
         apktool \
+        # ── Reverse engineering / firmware (lightweight CLIs; Ghidra is
+        # kept out of the base image and delivered via the ghidra-mcp
+        # sidecar — see the INSTALL_REVERSING block below) ──
+        radare2 \
+        binwalk \
         # ── YARA (DFIR validation; complements yara-x on the host) ──
         yara
 
@@ -154,10 +200,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 ENV INSANE_CHROMIUM_PATH=/usr/bin/chromium
 
-# ── Reverse Engineering: Ghidra 12.1 + radare2 + binwalk (opt-in) ──
+# ── Reverse Engineering: Ghidra 12.1 (opt-in) ──
 #
-# Gated by a build ARG so the default sandbox image stays lean
-# (~500 MB lighter without JDK 21 + Ghidra). Enable with:
+# radare2 + binwalk are lightweight CLIs and live in the base apt set
+# above, so bash can run them in every sandbox. Only Ghidra (JDK 21 +
+# the ~500 MB suite) is gated by this build ARG so the default sandbox
+# image stays lean. Enable with:
 #   docker build --build-arg INSTALL_REVERSING=true ...
 # or, via docker-compose, set INSTALL_REVERSING=true in .env when running
 # with COMPOSE_PROFILES=reversing. The ghidra-mcp sidecar service in
@@ -183,8 +231,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
         apt-get update && \
         apt-get install -y --no-install-recommends --no-install-suggests \
             openjdk-21-jdk-headless \
-            radare2 \
-            binwalk \
             unzip && \
         curl -fsSL -o /tmp/ghidra.zip \
             "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC_${GHIDRA_BUILD_DATE}.zip" && \
@@ -195,7 +241,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
         mv "/opt/ghidra_${GHIDRA_VERSION}_PUBLIC" /opt/ghidra && \
         rm /tmp/ghidra.zip ; \
     else \
-        echo "INSTALL_REVERSING=false — skipping JDK 21 + Ghidra + radare2 + binwalk" ; \
+        echo "INSTALL_REVERSING=false — skipping JDK 21 + Ghidra (radare2 + binwalk are in the base image)" ; \
     fi
 
 ENV GHIDRA_INSTALL_DIR=/opt/ghidra \

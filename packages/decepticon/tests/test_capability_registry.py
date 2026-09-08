@@ -1,0 +1,171 @@
+"""Drift guards binding the capability registry to its consumers.
+
+The registry (:mod:`decepticon_core.capabilities`) only prevents the
+"prompt promises tools the image lacks" class of bug if the image, the
+telemetry allowlist, and the generated prompt are all held in lockstep
+with it. These tests are the lockstep:
+
+  * ``base`` apt packages in the registry == the sandbox Dockerfile's
+    canonical install block.
+  * every registry-shipped security binary is capturable by the
+    privacy-preserving telemetry allowlist.
+  * the agent prompt's Kali section is registry-generated and truthful.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from decepticon.runtime.programs import KNOWN_PROGRAMS
+from decepticon_core.capabilities import base_apt_packages, security_binaries
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_SANDBOX_DOCKERFILE = _REPO_ROOT / "containers" / "sandbox.Dockerfile"
+
+
+# A Debian package token: starts alphanumeric, then alnum/./+/-.  This
+# deliberately excludes shell noise (``&&``, ``;``, ``{}``, sed strings)
+# and apt flags (``--no-install-recommends``).
+_PKG_TOKEN = re.compile(r"^[a-z0-9][a-z0-9.+-]*$")
+
+
+def _dockerfile_base_packages() -> set[str]:
+    """Parse the canonical apt-install package block from the sandbox
+    Dockerfile — the shell-line-continuation run of ``apt-get install``
+    that contains ``nmap`` (the bootstrap ``ca-certificates`` block does
+    not)."""
+    text = _SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    blocks: list[set[str]] = []
+    capturing = False
+    pkgs: set[str] = set()
+
+    for raw in lines:
+        stripped = raw.strip()
+        # Docker strips whole-line ``#`` comments before joining line
+        # continuations, so a comment line inside an install list is
+        # transparent — neither starts, ends, nor contributes to a list.
+        if stripped.startswith("#"):
+            continue
+
+        body = raw.split("#", 1)[0]
+        if "apt-get install" in body:
+            # Start a fresh install list (drops any prior && / ; command).
+            capturing = True
+            pkgs = set()
+
+        if capturing:
+            for token in body.replace("\\", " ").split():
+                if token in ("apt-get", "install") or token.startswith("-"):
+                    continue
+                if _PKG_TOKEN.match(token):
+                    pkgs.add(token)
+
+            # A command separator (``&&``/``;``) ends THIS install list even
+            # if the shell line continues, and so does a line without a
+            # trailing backslash.
+            if "&&" in body or ";" in body or not body.rstrip().endswith("\\"):
+                blocks.append(pkgs)
+                capturing = False
+
+    for candidate in blocks:
+        if "nmap" in candidate:
+            return candidate
+    raise AssertionError("could not locate canonical apt-install block")
+
+
+def test_registry_base_matches_dockerfile() -> None:
+    """The registry's ``base`` apt set must equal the sandbox image's
+    canonical install block — no drift in either direction."""
+    registry = set(base_apt_packages())
+    dockerfile = _dockerfile_base_packages()
+
+    missing_from_image = registry - dockerfile
+    missing_from_registry = dockerfile - registry
+
+    assert not missing_from_image, (
+        "capabilities declared base but NOT installed in sandbox.Dockerfile: "
+        f"{sorted(missing_from_image)}"
+    )
+    assert not missing_from_registry, (
+        "packages installed in sandbox.Dockerfile but NOT in the capability "
+        f"registry: {sorted(missing_from_registry)} — add a Capability entry."
+    )
+
+
+def test_shipped_binaries_are_telemetry_capturable() -> None:
+    """Every security binary the platform ships must be in the telemetry
+    allowlist, or its usage is invisible to under-use analysis.
+
+    ``extract_programs`` lowercases command basenames, so capturability is
+    checked against the lowercased binary name (e.g. the camelCase
+    impacket-GetNPUsers is stored as impacket-getnpusers)."""
+    uncapturable = {b for b in security_binaries() if b.lower() not in KNOWN_PROGRAMS}
+    assert not uncapturable, (
+        "registry ships these security binaries but runtime/programs.py "
+        f"cannot capture them: {sorted(uncapturable)}"
+    )
+
+
+def test_prompt_kali_section_is_registry_generated() -> None:
+    """The builder must derive the Kali section from the registry, not the
+    old hard-coded 'full Kali' string."""
+    from decepticon.agents.prompts import builder
+
+    block = builder._KALI_ENVIRONMENT
+    assert "<KALI_ENVIRONMENT>" in block
+    # The retired false claim must be gone.
+    assert "full Kali Linux distribution" not in block
+    assert "Every tool in the" not in block
+    # A real installed tool from the tranche is advertised.
+    assert "nuclei" in block
+
+
+def test_prompt_does_not_advertise_uninstalled_tools() -> None:
+    """No PLANNED/uninstalled tool may appear in the prompt's installed
+    section (regression guard for the original prompt/image mismatch)."""
+    from decepticon.agents.prompts import builder
+
+    block = builder._KALI_ENVIRONMENT
+    installed_section = block.split("**Not yet installed**")[0]
+    for uninstalled in ("chisel", "ligolo-ng"):
+        assert uninstalled not in installed_section, (
+            f"{uninstalled} is not installed but appears in the prompt's installed section"
+        )
+
+
+def test_ghidra_not_advertised_as_bash_binary() -> None:
+    """Ghidra lives in the ghidra-mcp sidecar, not the bash sandbox. The
+    prompt must reach it only through the dedicated-tools section, never as
+    an installed base/profile bash command (regression for the review
+    finding that profile tools were unreachable)."""
+    from decepticon.agents.prompts import builder
+
+    block = builder._KALI_ENVIRONMENT
+    base_and_profile = block.split("**Via dedicated tools")[0]
+    assert "ghidra" not in base_and_profile.lower(), (
+        "ghidra is sidecar-delivered and must not appear as a bash binary"
+    )
+    assert "**Via dedicated tools" in block
+    assert "ghidra" in block  # still discoverable via the dedicated-tools line
+
+
+def test_impacket_prompt_uses_real_executable_names() -> None:
+    """The AD section must advertise the real impacket-prefixed commands,
+    not the non-existent ``secretsdump.py`` names."""
+    from decepticon.agents.prompts import builder
+
+    block = builder._KALI_ENVIRONMENT
+    assert "impacket-secretsdump" in block
+    assert "impacket-ntlmrelayx" in block
+    assert "secretsdump.py" not in block
+
+
+def test_dockerfile_block_parse_sane() -> None:
+    """Guard the parser itself — it must find a plausible package set."""
+    pkgs = _dockerfile_base_packages()
+    assert "nmap" in pkgs
+    assert "yara" in pkgs
+    assert 30 < len(pkgs) < 80

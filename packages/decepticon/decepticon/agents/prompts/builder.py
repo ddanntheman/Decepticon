@@ -37,6 +37,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from decepticon.agents.prompts.registry import build_language_policy
+from decepticon_core.capabilities import generate_kali_environment_block
 
 log = logging.getLogger(__name__)
 
@@ -118,44 +119,12 @@ You are an analyst and collaborator, not just a tool executor. This means:
 - **Connect the dots**: Relate new findings to previous discoveries across the engagement
 </ANALYST_MINDSET>"""
 
-_KALI_ENVIRONMENT = """\
-<KALI_ENVIRONMENT>
-You are operating inside a full Kali Linux distribution. Every tool in the
-standard Kali metapackage is installed and available — you are NOT limited to
-the tools explicitly named in your prompt. If a situation calls for a tool
-that exists in Kali but isn't mentioned in your instructions, USE IT.
-
-Key tool categories available to you (non-exhaustive):
-- **Recon / enumeration**: nmap, masscan, subfinder, amass, fierce, dnsenum,
-  dnsrecon, enum4linux-ng, smbclient, rpcclient, snmpwalk, nbtscan,
-  whatweb, wafw00f, wpscan, nikto, smtp-user-enum
-- **Web application**: sqlmap, commix, dalfox, xsser, ffuf, gobuster,
-  feroxbuster, dirb, wfuzz, arjun, paramspider, graphql-cop, clairvoyance
-- **Exploitation**: metasploit (msfconsole/msfvenom), searchsploit,
-  impacket-* (secretsdump, psexec, wmiexec, etc.), crackmapexec/netexec,
-  responder, hydra, medusa, john, hashcat
-- **Post-exploitation**: bloodhound-python, certipy, mimikatz, chisel,
-  socat, proxychains, ligolo-ng
-- **Wireless / network**: aircrack-ng, bettercap, tcpdump, tshark, ncat
-- **Crypto / TLS**: testssl.sh, sslyze, sslscan, openssl
-- **Secret scanning**: trufflehog, gitleaks, git-dumper
-- **Scripting**: Python 3 with requests/httpx/asyncio/pwntools/scapy,
-  Ruby, Perl, Bash
-
-**Metasploit is your primary exploit framework.** Before writing custom
-exploits, ALWAYS check Metasploit for existing modules:
-  `msfconsole -q -x "search type:exploit <product> <version>; exit"`
-Use `auxiliary/scanner/*` for deep service enumeration, `exploit/*` for
-known CVE exploitation, `post/*` for post-exploitation, and `msfvenom`
-for payload generation. Metasploit's database (`db_nmap`) can ingest
-nmap results for structured host/service tracking. Note: for C2 and
-persistence, use Sliver — not Metasploit.
-
-Be creative. Think like a penetration tester — if the standard approach
-isn't working, try alternative tools, custom scripts, or chained techniques.
-You can write and execute Python/Bash scripts on the fly for any task that
-existing tools don't cover.
-</KALI_ENVIRONMENT>"""
+# The Kali environment section is GENERATED from the capability registry
+# (decepticon_core.capabilities), not hand-written, so the agent is never
+# told a binary is installed unless the registry — the same source of truth
+# the sandbox image and telemetry allowlist are validated against — declares
+# it ``base`` or profile-gated. See tests/test_capability_registry.py.
+_KALI_ENVIRONMENT = generate_kali_environment_block()
 
 _MISSION_DIRECTIVE = """\
 <MISSION_DIRECTIVE>

@@ -59,6 +59,9 @@ SECURITY_PROGRAMS: frozenset[str] = frozenset(
         "nuclei",
         "wpscan",
         "httpx",
+        "httpx-toolkit",
+        "whatweb",
+        "wafw00f",
         "gowitness",
         "eyewitness",
         # vuln-specific
@@ -78,21 +81,39 @@ SECURITY_PROGRAMS: frozenset[str] = frozenset(
         # SMB / AD
         "enum4linux",
         "enum4linux-ng",
+        "smbclient",
         "smbmap",
         "crackmapexec",
         "netexec",
         "nxc",
+        "nxcdb",
         "responder",
         "mitm6",
         "certipy",
         "bloodhound",
         "bloodhound-python",
-        "secretsdump.py",
-        "psexec.py",
-        "wmiexec.py",
-        "smbexec.py",
-        "getnpusers.py",
-        "getuserspns.py",
+        # Impacket ships example scripts as ``impacket-``-prefixed executables
+        # (python3-impacket + impacket-scripts). extract_programs() lowercases
+        # basenames, so these are stored lowercase to match camelCase commands
+        # like impacket-GetNPUsers.
+        "impacket-secretsdump",
+        "impacket-ntlmrelayx",
+        "impacket-psexec",
+        "impacket-wmiexec",
+        "impacket-smbexec",
+        "impacket-atexec",
+        "impacket-dcomexec",
+        "impacket-getnpusers",
+        "impacket-getuserspns",
+        "impacket-gettgt",
+        "impacket-getst",
+        "impacket-ticketer",
+        "impacket-lookupsid",
+        "impacket-samrdump",
+        "impacket-rpcdump",
+        "impacket-mssqlclient",
+        "impacket-smbserver",
+        "impacket-smbclient",
         # exploitation frameworks
         "msfconsole",
         "msfvenom",
@@ -101,6 +122,7 @@ SECURITY_PROGRAMS: frozenset[str] = frozenset(
         "sliver-client",
         # TLS
         "testssl.sh",
+        "testssl",
         "sslscan",
         "sslyze",
         "tlsx",
@@ -118,6 +140,14 @@ SECURITY_PROGRAMS: frozenset[str] = frozenset(
         "prowler",
         "cloud_enum",
         "s3scanner",
+        # network analysis / capture
+        "tcpdump",
+        "tshark",
+        # mobile triage
+        "adb",
+        "apktool",
+        # DFIR
+        "yara",
         # reversing / firmware
         "binwalk",
         "ghidra",
