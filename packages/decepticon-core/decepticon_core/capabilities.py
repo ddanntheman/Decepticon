@@ -824,6 +824,12 @@ def reach_instruction(cap: Capability) -> str:
     """
     delivery = cap.delivery
     if delivery == "base":
+        if cap.requires_service:
+            return (
+                f"installed in the sandbox, but needs the '{cap.requires_service}' "
+                f"workload running — ask the orchestrator to ops_start it first, then "
+                f"run it with the bash tool"
+            )
         return "installed in the sandbox — run it directly with the bash tool"
     if delivery.startswith("profile:"):
         profile = delivery.removeprefix("profile:")
@@ -838,7 +844,10 @@ def reach_instruction(cap: Capability) -> str:
             f"@tool wrappers, NOT bash; request via ops_start first"
         )
     if delivery == "pip":
-        return f"not pre-installed — `pip3 install {cap.id}` in the sandbox, then run with bash"
+        return (
+            f"not pre-installed — `pip3 install --break-system-packages {cap.id}` "
+            f"in the sandbox (externally-managed Python), then run with bash"
+        )
     if delivery == "external":
         return "requires an external provider (hardware/GPU/cloud) — not runnable in the sandbox"
     return delivery

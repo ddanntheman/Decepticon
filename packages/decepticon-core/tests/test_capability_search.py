@@ -68,6 +68,27 @@ def test_reach_instruction_reflects_delivery() -> None:
     assert "NOT bash" in reach_instruction(BINARY_TO_CAPABILITY["ghidra"])
 
 
+def test_reach_instruction_base_capability_with_service_requires_ops_start() -> None:
+    # Sliver ships in the base image but is inert until its c2-sliver
+    # workload runs — the hint must not claim it is directly runnable.
+    sliver = BINARY_TO_CAPABILITY["sliver"]
+    assert sliver.delivery == "base"
+    assert sliver.requires_service == "c2-sliver"
+    text = reach_instruction(sliver)
+    assert "c2-sliver" in text
+    assert "ops_start" in text
+    assert "run it directly" not in text
+
+
+def test_reach_instruction_pip_uses_break_system_packages() -> None:
+    # Kali's Python is externally managed; plain pip3 install is rejected.
+    vol = BINARY_TO_CAPABILITY["vol"]
+    assert vol.delivery == "pip"
+    text = reach_instruction(vol)
+    assert "--break-system-packages" in text
+    assert "volatility3" in text
+
+
 def test_reach_instruction_covers_every_registry_delivery() -> None:
     # No capability should fall through to the raw delivery string.
     for cap in CAPABILITY_REGISTRY:
