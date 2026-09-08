@@ -102,6 +102,24 @@ def test_role_highlights_recommended_for_phase() -> None:
     assert scoped["recommended_for_role"]
 
 
+def test_recommended_survives_result_cap(monkeypatch) -> None:
+    # With a tiny cap, a role's phase-relevant tool that sorts late in the
+    # registry must still be pulled into the shown slice and recommended —
+    # not truncated away. recon → TA0043 (recon-category tools).
+    from decepticon.tools import discovery
+
+    monkeypatch.setattr(discovery, "_RESULT_CAP", 3)
+    scoped = json.loads(discovery.make_capability_search("recon").invoke({"max_risk": "intrusive"}))
+    assert scoped["count"] > 3
+    assert scoped["returned"] == 3
+    # Every shown tool is phase-relevant (recommended sorted first), and the
+    # recommended list only names tools actually present in the payload.
+    shown_ids = {c["id"] for c in scoped["capabilities"]}
+    assert scoped["recommended_for_role"]
+    assert set(scoped["recommended_for_role"]) <= shown_ids
+    assert all("TA0043" in c["phases"] for c in scoped["capabilities"])
+
+
 def test_unmapped_role_has_no_defaults() -> None:
     scoped = _invoke_role("decepticon", query="secretsdump")
     assert scoped["count"] >= 1  # no risk ceiling applied

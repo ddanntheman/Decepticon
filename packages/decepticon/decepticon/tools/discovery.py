@@ -93,6 +93,16 @@ def make_capability_search(role: str | None = None) -> Any:
             )
 
         total = len(caps)
+        # Surface the role's phase-relevant tools first so they survive the
+        # result cap (a broad search must never truncate away exactly the
+        # tools the role should be reaching for). Stable partition keeps
+        # registry order within each group.
+        phases = policy.phases if policy is not None else ()
+        if phases:
+            recommended_caps = [cap for cap in caps if any(p in phases for p in cap.phases)]
+            other_caps = [cap for cap in caps if not any(p in phases for p in cap.phases)]
+            caps = recommended_caps + other_caps
+
         shown = caps[:_RESULT_CAP]
         payload: dict[str, object] = {
             "count": total,
