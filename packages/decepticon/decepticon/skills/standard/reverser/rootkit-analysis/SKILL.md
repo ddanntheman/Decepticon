@@ -22,8 +22,10 @@ gmer.exe /scan
 # System-wide hidden process / driver detection (one plugin per run)
 vol -f memory.raw windows.pslist > pslist.txt
 vol -f memory.raw windows.psscan > psscan.txt
-# Processes in psscan.txt but NOT in pslist.txt → hidden by DKOM
-comm -13 <(awk '{print $3}' pslist.txt | sort -u) <(awk '{print $3}' psscan.txt | sort -u)
+# PIDs in psscan.txt but NOT in pslist.txt → hidden by DKOM (compare on
+# the numeric PID column, not the image name — distinct processes can
+# share an executable name and would mask each other)
+comm -13 <(awk '$1 ~ /^[0-9]+$/ {print $1}' pslist.txt | sort -u) <(awk '$1 ~ /^[0-9]+$/ {print $1}' psscan.txt | sort -u)
 
 # UEFI firmware extraction and analysis
 chipsec_util.py spi dump firmware.bin

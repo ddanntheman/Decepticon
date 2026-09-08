@@ -371,6 +371,34 @@ def test_tun_overlay_maps_device():
     )
 
 
+RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
+
+
+def test_tun_overlay_is_release_tracked():
+    """docker-compose.tun.yml must be pinned in config-checksums.txt.
+
+    The installer and launcher self-update fetch config files from
+    raw.githubusercontent.com and verify each against the release-pinned
+    config-checksums.txt manifest before writing. If the TUN overlay is
+    not in the ``sha256sum`` line that builds that manifest, either it is
+    never shipped to release/updated installs (operators can't enable
+    ligolo Layer-3 pivoting) or it ships unverified (a tampered CDN copy
+    would pass) — both regress the opt-in TUN wiring. This fences the
+    manifest generation so the overlay stays release-tracked.
+    """
+    if not RELEASE_WORKFLOW.exists():
+        pytest.fail(f"{RELEASE_WORKFLOW} is missing")
+    text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    sha_lines = [
+        ln for ln in text.splitlines() if "sha256sum" in ln and "config-checksums.txt" in ln
+    ]
+    assert sha_lines, "no sha256sum line generating config-checksums.txt found in release.yml"
+    assert any("docker-compose.tun.yml" in ln for ln in sha_lines), (
+        "docker-compose.tun.yml is not in the config-checksums.txt sha256sum "
+        f"line; release installs can't verify/enable the TUN overlay. lines={sha_lines!r}"
+    )
+
+
 def test_dual_homed_services_are_allowlisted():
     """A service on both networks must be in DUAL_HOMED_SERVICES.
 

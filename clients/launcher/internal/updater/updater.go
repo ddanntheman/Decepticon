@@ -24,7 +24,8 @@ import (
 
 // ConfigManifestAsset is the name of the sha256sum-format manifest the
 // release workflow uploads alongside the Go binaries. It pins
-// docker-compose.yml, config/litellm.yaml, and .env.example.
+// docker-compose.yml, docker-compose.tun.yml, config/litellm.yaml, and
+// .env.example.
 const ConfigManifestAsset = "config-checksums.txt"
 
 // BinaryChecksumsAsset is GoReleaser's binary checksum manifest. Same
@@ -200,7 +201,7 @@ func pickSoakedStable(releases []Release, now time.Time, soak time.Duration) *Re
 		}
 		pub, err := time.Parse(time.RFC3339, r.PublishedAt)
 		if err != nil || pub.After(cutoff) {
-			continue // unparseable timestamp, or not yet soaked
+			continue // unparsable timestamp, or not yet soaked
 		}
 		if best == nil || compareSemver(
 			strings.TrimPrefix(best.TagName, "v"),
@@ -337,7 +338,29 @@ func parseUint(s string) (int, bool) {
 	return n, true
 }
 
-// SyncConfigFiles downloads updated docker-compose.yml and litellm.yaml.
+// configSyncTargets maps each release-tracked config file (repo-relative
+// source path) to its destination under the install dir. These are the
+// files SyncConfigFiles downloads and manifest-verifies.
+//
+// docker-compose.opscontrol.yml is intentionally absent: it is
+// LAUNCHER-MANAGED (cmd/opscontrol/supervisor.go embeds the body and
+// writes it at every `decepticon start`), so the file is never
+// downloaded, never manifest-verified, and never release-tied.
+// Previously every overlay change forced a point release with a "no
+// checksum entry" sync warning.
+func configSyncTargets(home string) map[string]string {
+	return map[string]string{
+		"docker-compose.yml": filepath.Join(home, "docker-compose.yml"),
+		// Opt-in TUN overlay (ligolo-ng Layer-3 pivoting). Synced like the
+		// base compose file so release installs can enable TUN; inert unless
+		// the operator passes `-f docker-compose.tun.yml`.
+		"docker-compose.tun.yml": filepath.Join(home, "docker-compose.tun.yml"),
+		"config/litellm.yaml":    filepath.Join(home, "config", "litellm.yaml"),
+	}
+}
+
+// SyncConfigFiles downloads updated docker-compose.yml,
+// docker-compose.tun.yml and litellm.yaml.
 //
 // When “release“ is non-nil AND the release exposes a
 // “config-checksums.txt“ asset, every downloaded file is verified
@@ -350,17 +373,7 @@ func parseUint(s string) (int, bool) {
 // asset available) fall back to the legacy download-without-verify
 // behavior with a warning. “release == nil“ exists for this path.
 func SyncConfigFiles(branch string, release *Release) error {
-	home := config.DecepticonHome()
-	files := map[string]string{
-		// docker-compose.opscontrol.yml is intentionally absent: it is
-		// LAUNCHER-MANAGED (cmd/opscontrol/supervisor.go embeds the
-		// body and writes it at every `decepticon start`), so the file
-		// is never downloaded, never manifest-verified, and never
-		// release-tied. Previously every overlay change forced a point
-		// release with a "no checksum entry" sync warning.
-		"docker-compose.yml":  filepath.Join(home, "docker-compose.yml"),
-		"config/litellm.yaml": filepath.Join(home, "config", "litellm.yaml"),
-	}
+	files := configSyncTargets(config.DecepticonHome())
 
 	client := &http.Client{Timeout: 30 * time.Second}
 

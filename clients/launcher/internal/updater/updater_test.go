@@ -521,6 +521,37 @@ func TestWriteVersion_NoPrefix(t *testing.T) {
 	}
 }
 
+// ---- configSyncTargets ----
+
+func TestConfigSyncTargets_IncludesTunOverlay(t *testing.T) {
+	home := filepath.FromSlash("/opt/decepticon")
+	targets := configSyncTargets(home)
+
+	// The opt-in TUN overlay must be release-tracked: without it,
+	// release/updated installs never receive docker-compose.tun.yml and
+	// operators there cannot enable ligolo-ng Layer-3 pivoting. It must
+	// also carry a config-checksums.txt entry, so it has to be one of the
+	// files SyncConfigFiles downloads and manifest-verifies.
+	want := map[string]string{
+		"docker-compose.yml":     filepath.Join(home, "docker-compose.yml"),
+		"docker-compose.tun.yml": filepath.Join(home, "docker-compose.tun.yml"),
+		"config/litellm.yaml":    filepath.Join(home, "config", "litellm.yaml"),
+	}
+	if len(targets) != len(want) {
+		t.Fatalf("configSyncTargets has %d entries, want %d: %v", len(targets), len(want), targets)
+	}
+	for src, wantDst := range want {
+		gotDst, ok := targets[src]
+		if !ok {
+			t.Errorf("configSyncTargets missing %q", src)
+			continue
+		}
+		if gotDst != wantDst {
+			t.Errorf("configSyncTargets[%q] = %q, want %q", src, gotDst, wantDst)
+		}
+	}
+}
+
 // ---- ApplyUpdate ----
 
 func TestApplyUpdate_SelfUpdateErrorPropagates(t *testing.T) {

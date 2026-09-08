@@ -230,6 +230,13 @@ download_files() {
     # docker-compose.yml (always overwrite — this is infrastructure, not user config)
     curl -fsSL "$RAW_BASE/docker-compose.yml" -o "$install_dir/docker-compose.yml"
 
+    # docker-compose.tun.yml — opt-in overlay that maps /dev/net/tun for
+    # ligolo-ng Layer-3 pivoting. Infrastructure like the base compose file
+    # (always overwrite); it does nothing unless the operator explicitly
+    # adds it with `-f docker-compose.tun.yml`, but it must be present so
+    # release/updated installs can opt into TUN.
+    curl -fsSL "$RAW_BASE/docker-compose.tun.yml" -o "$install_dir/docker-compose.tun.yml"
+
     # .env.example — reference template only. Do NOT auto-create .env: the
     # onboard wizard checks for the file's presence to decide whether to run,
     # so a pre-seeded template would silently skip first-time configuration.
@@ -262,7 +269,7 @@ download_files() {
     # Workspace directory (bind-mounted into containers)
     mkdir -p "$install_dir/workspace"
 
-    # Verify the three files we just wrote against the release-pinned
+    # Verify the config files we just wrote against the release-pinned
     # config-checksums.txt manifest before announcing success. raw.* is
     # served from GitHub's CDN; GitHub Releases assets carry the manifest
     # for the same tag. Cross-checking closes the "tampered raw download"
