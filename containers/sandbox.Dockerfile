@@ -116,19 +116,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
         radare2 \
         binwalk \
         # ── YARA (DFIR validation; complements yara-x on the host) ──
-        yara
-
-# ── Tools NOT yet wired into apt-install ──
-# Deliberately deferred to follow-up PRs because they need either a
-# GitHub-release pull (no apt package) or a pip install:
-#   chisel       (GitHub release: jpillora/chisel)
-#   ligolo-ng    (GitHub release: nicocha30/ligolo-ng)
-#   afl++ / aflplusplus / honggfuzz (apt names + dep weight uncertain)
-#   plaso        (pip: ``plaso``; pulls in pyparsing + heavy deps)
-#   volatility3  (pip: ``volatility3``; same as operator's host install)
-# Operators who need these today can ``pip install volatility3 plaso``
-# inside the sandbox via the agent's bash tool. A follow-up PR will add
-# them to the image once the right install paths are verified.
+        yara \
+        # ── Tunneling / pivoting ──
+        # chisel + ligolo-ng are in kali-rolling apt (verified against the
+        # pinned image). ligolo-ng ships ligolo-proxy + ligolo-agent.
+        chisel \
+        ligolo-ng \
+        # ── Fuzzing ──
+        # apt package is literally named ``afl++`` (provides afl-fuzz et al.)
+        afl++ \
+        # ── DFIR / forensics ──
+        # plaso ships plaso-log2timeline / plaso-psort / plaso-pinfo.
+        # (volatility3 has no apt package — pip-installed at build below.)
+        plaso
 
 # Configure tmux: 20K line scrollback buffer. The Python-side output
 # truncation (MAX_OUTPUT_CHARS = 30_000 chars) means the agent reads at
@@ -139,6 +139,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
 # realistic red-team tool output (nmap /24 ≈ 5–25K lines) while cutting
 # per-session RSS by ~60% vs the previous 50K.
 RUN echo "set-option -g history-limit 20000" > /root/.tmux.conf
+
+# ── Memory forensics (DFIR agent) — volatility3 ──
+# volatility3 has no apt package in kali-rolling, so it is pip-installed
+# at BUILD time (baked in, always present + runnable via bash `vol`)
+# rather than left for the agent to install at runtime. Kept in lockstep
+# with the registry's base ``pip_packages`` by a drift test
+# (tests/test_capability_registry.py). --break-system-packages: Kali's
+# Python is externally managed (PEP 668).
+RUN pip3 install --break-system-packages --no-cache-dir \
+    "volatility3>=2.5.0"
 
 # Optional HTTP sandbox daemon — see decepticon/sandbox_server/.
 #
