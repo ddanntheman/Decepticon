@@ -14,11 +14,13 @@ with it. These tests are the lockstep:
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from pathlib import Path
 
 from decepticon.runtime.programs import KNOWN_PROGRAMS
 from decepticon_core.capabilities import (
+    Capability,
     base_apt_packages,
     base_pip_packages,
     security_binaries,
@@ -26,6 +28,7 @@ from decepticon_core.capabilities import (
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SANDBOX_DOCKERFILE = _REPO_ROOT / "containers" / "sandbox.Dockerfile"
+_SKILLS_ROOT = _REPO_ROOT / "packages" / "decepticon" / "decepticon" / "skills"
 
 
 # A Debian package token: starts alphanumeric, then alnum/./+/-.  This
@@ -221,3 +224,83 @@ def test_dockerfile_block_parse_sane() -> None:
     assert "nmap" in pkgs
     assert "yara" in pkgs
     assert 30 < len(pkgs) < 80
+
+
+# ── Skill ↔ registry command-name parity ────────────────────────────────
+# When a tool is baked into the base image (Phase B: chisel, ligolo-ng,
+# plaso, volatility3), the skills that teach agents how to run it must name
+# the ACTUAL binary the image installs — otherwise the promoted tool ships
+# but every skill points agents at a command that does not exist, and the
+# tool is effectively unusable. These are the pre-promotion invocation
+# forms that must never come back.
+_FORBIDDEN_SKILL_INVOCATIONS = {
+    # Ligolo-ng ships as ligolo-proxy / ligolo-agent on Kali; the old
+    # upstream-release names (./proxy, ./agent) are not on PATH.
+    r"\./proxy\b": "ligolo-proxy",
+    r"\./agent\b": "ligolo-agent",
+    # chisel is on PATH — no ./chisel dropped-binary form.
+    r"\./chisel\b": "chisel",
+    # volatility3 installs the `vol` entrypoint, not a `volatility3` command.
+    r"\bvolatility3\s+-f\b": "vol -f",
+    # Kali prefixes plaso commands; the bare backtick-code forms are stale.
+    r"`log2timeline`": "plaso-log2timeline",
+    r"`psort`": "plaso-psort",
+}
+
+
+def _skill_files() -> list[Path]:
+    return sorted(_SKILLS_ROOT.rglob("SKILL.md"))
+
+
+def test_skills_use_real_baked_in_command_names() -> None:
+    """No skill may invoke a promoted base tool under a name the image does
+    not install (regression for Phase B making the tools reachable)."""
+    offenders: list[str] = []
+    for skill in _skill_files():
+        text = skill.read_text(encoding="utf-8")
+        for pattern, correct in _FORBIDDEN_SKILL_INVOCATIONS.items():
+            if re.search(pattern, text):
+                rel = skill.relative_to(_REPO_ROOT)
+                offenders.append(f"{rel}: {pattern!r} → use {correct!r}")
+    assert not offenders, "skills invoke tools under non-installed names:\n" + "\n".join(offenders)
+
+
+def test_promoted_tool_binaries_are_documented() -> None:
+    """The tunneling/DFIR skills that were flagged must now positively name
+    the real registry binaries, so the fix can't silently regress to a
+    tool-free workflow."""
+    lateral = (
+        _SKILLS_ROOT / "standard" / "post-exploit" / "lateral-movement" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    for binary in ("ligolo-proxy", "ligolo-agent", "chisel server", "chisel client"):
+        assert binary in lateral, f"lateral-movement skill no longer documents {binary!r}"
+
+    rootkit = (_SKILLS_ROOT / "standard" / "reverser" / "rootkit-analysis" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "vol -f" in rootkit, "rootkit-analysis skill no longer runs volatility via `vol`"
+
+    dfir = (_SKILLS_ROOT / "standard" / "dfir" / "SKILL.md").read_text(encoding="utf-8")
+    assert "plaso-log2timeline" in dfir, "dfir skill no longer names plaso-log2timeline"
+
+
+def test_capability_pip_packages_is_last_field() -> None:
+    """``pip_packages`` must stay the LAST dataclass field so it never
+    shifts the positional constructor contract of the pre-existing fields
+    (regression for the Phase B review finding that inserting it before
+    ``risk_tier`` silently reassigned positional args)."""
+    field_names = [f.name for f in dataclasses.fields(Capability)]
+    assert field_names[-1] == "pip_packages", (
+        "pip_packages must be the last Capability field to preserve the "
+        f"positional argument order; got {field_names}"
+    )
+    # The pre-existing positional contract up to risk_tier must be intact.
+    assert field_names[:7] == [
+        "id",
+        "category",
+        "description",
+        "binaries",
+        "delivery",
+        "apt_packages",
+        "risk_tier",
+    ], f"positional field order changed: {field_names}"
