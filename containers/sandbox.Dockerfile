@@ -27,43 +27,83 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
     find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i 's|http://|https://|g' {} + 2>/dev/null; \
     apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
+        # ────────────────────────────────────────────────────────────
+        # This apt set is the CANONICAL source of the sandbox's "base"
+        # delivery class. It is kept in lockstep with
+        # packages/decepticon-core/decepticon_core/capabilities.py — the
+        # capability registry whose `delivery == "base"` entries drive the
+        # agent prompt, telemetry allowlist, and discovery tools. A drift
+        # test (tests/test_capability_registry.py) fails CI if this list
+        # and `base_apt_packages()` diverge, so add a Capability entry
+        # whenever you add a package here (and vice-versa).
+        # ────────────────────────────────────────────────────────────
         # ── Core runtime ──
         curl \
         wget \
         python3 \
         python3-pip \
         tmux \
-        # ── Recon ──
+        # ── JavaScript runtime (JSFuck payload encoding/validation) ──
+        nodejs \
+        npm \
+        # ── SSH client + sshpass for lateral movement / multi-host
+        # scenarios (e.g., MHBench OpenStack topologies — attacker pivots
+        # through a jump host via ProxyJump to reach internal ring hosts).
+        openssh-client \
+        sshpass \
+        # ── Recon / enumeration ──
         nmap \
+        masscan \
         dnsutils \
         whois \
         netcat-openbsd \
         iputils-ping \
         subfinder \
-        # ── Exploit & post-exploitation ──
-        hydra \
-        sqlmap \
+        # ── Web discovery / assessment (headless, non-interactive) ──
         nikto \
-        smbclient \
-        exploitdb \
         dirb \
         gobuster \
-        # SSH client + sshpass for lateral movement / multi-host scenarios
-        # (e.g., MHBench OpenStack topologies — attacker pivots through a
-        # jump host via ProxyJump to reach internal ring hosts).
-        openssh-client \
-        sshpass \
-        # ── JavaScript runtime (JSFuck payload encoding/validation) ──
-        nodejs \
-        npm \
-        # ── C2 client (connects to the separate c2-sliver server container) ──
-        sliver \
+        ffuf \
+        feroxbuster \
+        nuclei \
+        wpscan \
+        httpx-toolkit \
+        whatweb \
+        wafw00f \
+        # ── Vulnerability-specific ──
+        sqlmap \
+        commix \
+        dalfox \
+        # ── Credentials / cracking ──
+        hydra \
+        john \
+        hashcat \
+        # ── SMB / network services ──
+        smbclient \
+        enum4linux \
+        netexec \
         # ── AD attack chain — Responder → ntlmrelayx → secretsdump ──
         # responder + python3-impacket are both in kali-rolling apt; they
         # chain together for the canonical internal-network AD attack
         # documented in docs/red-team/tools-techniques.md.
         responder \
         python3-impacket \
+        # ── Exploitation frameworks ──
+        exploitdb \
+        metasploit-framework \
+        # ── C2 client (connects to the separate c2-sliver server container) ──
+        sliver \
+        # ── TLS / crypto assessment ──
+        testssl.sh \
+        sslscan \
+        sslyze \
+        # ── Secrets / supply-chain scanning ──
+        gitleaks \
+        trufflehog \
+        # ── Packet capture / network analysis ──
+        tcpdump \
+        tshark \
+        socat \
         # ── Mobile triage host-side (Mobile agent) ──
         # adb + apktool are in kali-rolling apt and let the agent do quick
         # APK / device triage from the bash tool without leaving the sandbox.

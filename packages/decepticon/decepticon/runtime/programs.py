@@ -59,6 +59,9 @@ SECURITY_PROGRAMS: frozenset[str] = frozenset(
         "nuclei",
         "wpscan",
         "httpx",
+        "httpx-toolkit",
+        "whatweb",
+        "wafw00f",
         "gowitness",
         "eyewitness",
         # vuln-specific
@@ -78,10 +81,12 @@ SECURITY_PROGRAMS: frozenset[str] = frozenset(
         # SMB / AD
         "enum4linux",
         "enum4linux-ng",
+        "smbclient",
         "smbmap",
         "crackmapexec",
         "netexec",
         "nxc",
+        "nxcdb",
         "responder",
         "mitm6",
         "certipy",
@@ -101,6 +106,7 @@ SECURITY_PROGRAMS: frozenset[str] = frozenset(
         "sliver-client",
         # TLS
         "testssl.sh",
+        "testssl",
         "sslscan",
         "sslyze",
         "tlsx",
@@ -118,6 +124,14 @@ SECURITY_PROGRAMS: frozenset[str] = frozenset(
         "prowler",
         "cloud_enum",
         "s3scanner",
+        # network analysis / capture
+        "tcpdump",
+        "tshark",
+        # mobile triage
+        "adb",
+        "apktool",
+        # DFIR
+        "yara",
         # reversing / firmware
         "binwalk",
         "ghidra",
