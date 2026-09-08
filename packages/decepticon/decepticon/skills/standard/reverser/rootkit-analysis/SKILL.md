@@ -20,7 +20,7 @@ Detect and analyze rootkits operating at kernel, boot, and firmware levels — f
 gmer.exe /scan
 
 # System-wide hidden process / driver detection
-volatility3 -f memory.raw windows.pslist vs windows.psscan
+vol -f memory.raw windows.pslist vs windows.psscan
 # Processes in psscan but NOT in pslist → hidden by DKOM
 
 # UEFI firmware extraction and analysis
@@ -31,7 +31,7 @@ UEFIExtract firmware.bin
 sigcheck -u -e C:\Windows\System32\drivers\*.sys
 
 # Scan for SSDT hooks
-volatility3 -f memory.raw windows.ssdt
+vol -f memory.raw windows.ssdt
 ```
 
 ## MITRE ATT&CK Mapping

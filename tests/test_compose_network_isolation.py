@@ -290,6 +290,47 @@ def test_published_ports_bind_to_loopback():
     )
 
 
+def _service_devices(service: dict) -> list[str]:
+    """Return device mappings as ``host:container`` (or bare) strings."""
+    raw = service.get("devices") or []
+    out: list[str] = []
+    for d in raw:
+        if isinstance(d, str):
+            out.append(d)
+        elif isinstance(d, dict):
+            src = d.get("source")
+            tgt = d.get("target")
+            if src and tgt:
+                out.append(f"{src}:{tgt}")
+            elif src:
+                out.append(str(src))
+    return out
+
+
+def test_sandbox_maps_tun_device():
+    """The sandbox must map /dev/net/tun so TUN-based pivots work.
+
+    ligolo-ng's Layer-3 pivot (baked into the base image in Phase B and
+    taught by the lateral-movement skill) opens /dev/net/tun to build its
+    ``tun`` interface. NET_ADMIN alone lets the container *configure* an
+    interface but not open the device node — without this mapping the tool
+    launches but can never tunnel. This fences the mapping so a compose
+    edit can't silently strip it and regress ligolo to non-operational.
+    """
+    services = _rendered_compose()["services"]
+    sandbox = services.get("sandbox")
+    if sandbox is None:
+        pytest.fail("sandbox service missing from rendered compose")
+    devices = _service_devices(sandbox)
+    assert any(d.split(":")[0] == "/dev/net/tun" for d in devices), (
+        "sandbox service does not map /dev/net/tun; ligolo-ng and other "
+        f"TUN-based pivots cannot build their interface. devices={devices!r}\n"
+        "Fix: add '/dev/net/tun:/dev/net/tun' to the sandbox service's "
+        "`devices:` list (NET_ADMIN authorizes the interface; the device "
+        "node must still be mapped in)."
+    )
+
+
 def test_dual_homed_services_are_allowlisted():
     """A service on both networks must be in DUAL_HOMED_SERVICES.
 

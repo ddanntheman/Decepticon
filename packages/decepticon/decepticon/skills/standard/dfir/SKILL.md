@@ -61,7 +61,7 @@ detection rules back through real forensic artifacts to confirm they fire
 ## Tools sandbox
 
 - Volatility 3 (`vol`, `volshell`) — already in operator's AGENTS.md tooling.
-- plaso (`log2timeline`, `psort`).
+- plaso (`plaso-log2timeline`, `plaso-psort`, `plaso-pinfo`) — Kali prefixes the commands.
 - sigma-cli (`sigma convert`, `sigma check`).
 - yara-x (`yr`) — operator already has it installed at `C:\Tools\yara-x\yr.exe`.
 - Velociraptor + OSQuery (for live-system validation paths).

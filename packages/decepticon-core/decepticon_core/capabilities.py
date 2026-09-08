@@ -82,11 +82,6 @@ class Capability:
     apt_packages: tuple[str, ...] = ()
     """Debian/Kali package names that supply the binaries (base delivery)."""
 
-    pip_packages: tuple[str, ...] = ()
-    """PyPI names pip-installed at image BUILD time for base-delivery tools
-    that have no apt package (e.g. ``volatility3``). Distinct from the
-    ``pip`` *delivery* class, which the agent installs at runtime."""
-
     risk_tier: RiskTier = RiskTier.BOUNDED_ACTIVE
 
     roles: frozenset[str] = field(default_factory=frozenset)
@@ -102,6 +97,13 @@ class Capability:
 
     requires_profile: str | None = None
     """Compose profile that must be active (e.g. ``reversing``)."""
+
+    pip_packages: tuple[str, ...] = ()
+    """PyPI names pip-installed at image BUILD time for base-delivery tools
+    that have no apt package (e.g. ``volatility3``). Distinct from the
+    ``pip`` *delivery* class, which the agent installs at runtime. Kept last
+    in the field order so it never shifts the positional constructor
+    contract of the pre-existing fields."""
 
 
 # ── Registry ────────────────────────────────────────────────────────────
