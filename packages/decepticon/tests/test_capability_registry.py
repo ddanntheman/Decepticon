@@ -97,8 +97,12 @@ def test_registry_base_matches_dockerfile() -> None:
 
 def test_shipped_binaries_are_telemetry_capturable() -> None:
     """Every security binary the platform ships must be in the telemetry
-    allowlist, or its usage is invisible to under-use analysis."""
-    uncapturable = {b for b in security_binaries() if b not in KNOWN_PROGRAMS}
+    allowlist, or its usage is invisible to under-use analysis.
+
+    ``extract_programs`` lowercases command basenames, so capturability is
+    checked against the lowercased binary name (e.g. the camelCase
+    impacket-GetNPUsers is stored as impacket-getnpusers)."""
+    uncapturable = {b for b in security_binaries() if b.lower() not in KNOWN_PROGRAMS}
     assert not uncapturable, (
         "registry ships these security binaries but runtime/programs.py "
         f"cannot capture them: {sorted(uncapturable)}"
@@ -130,6 +134,33 @@ def test_prompt_does_not_advertise_uninstalled_tools() -> None:
         assert uninstalled not in installed_section, (
             f"{uninstalled} is not installed but appears in the prompt's installed section"
         )
+
+
+def test_ghidra_not_advertised_as_bash_binary() -> None:
+    """Ghidra lives in the ghidra-mcp sidecar, not the bash sandbox. The
+    prompt must reach it only through the dedicated-tools section, never as
+    an installed base/profile bash command (regression for the review
+    finding that profile tools were unreachable)."""
+    from decepticon.agents.prompts import builder
+
+    block = builder._KALI_ENVIRONMENT
+    base_and_profile = block.split("**Via dedicated tools")[0]
+    assert "ghidra" not in base_and_profile.lower(), (
+        "ghidra is sidecar-delivered and must not appear as a bash binary"
+    )
+    assert "**Via dedicated tools" in block
+    assert "ghidra" in block  # still discoverable via the dedicated-tools line
+
+
+def test_impacket_prompt_uses_real_executable_names() -> None:
+    """The AD section must advertise the real impacket-prefixed commands,
+    not the non-existent ``secretsdump.py`` names."""
+    from decepticon.agents.prompts import builder
+
+    block = builder._KALI_ENVIRONMENT
+    assert "impacket-secretsdump" in block
+    assert "impacket-ntlmrelayx" in block
+    assert "secretsdump.py" not in block
 
 
 def test_dockerfile_block_parse_sane() -> None:

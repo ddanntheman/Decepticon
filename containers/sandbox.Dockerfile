@@ -88,6 +88,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
         # documented in docs/red-team/tools-techniques.md.
         responder \
         python3-impacket \
+        impacket-scripts \
         # ── Exploitation frameworks ──
         exploitdb \
         metasploit-framework \
@@ -109,6 +110,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
         # APK / device triage from the bash tool without leaving the sandbox.
         adb \
         apktool \
+        # ── Reverse engineering / firmware (lightweight CLIs; Ghidra is
+        # kept out of the base image and delivered via the ghidra-mcp
+        # sidecar — see the INSTALL_REVERSING block below) ──
+        radare2 \
+        binwalk \
         # ── YARA (DFIR validation; complements yara-x on the host) ──
         yara
 
@@ -194,10 +200,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 ENV INSANE_CHROMIUM_PATH=/usr/bin/chromium
 
-# ── Reverse Engineering: Ghidra 12.1 + radare2 + binwalk (opt-in) ──
+# ── Reverse Engineering: Ghidra 12.1 (opt-in) ──
 #
-# Gated by a build ARG so the default sandbox image stays lean
-# (~500 MB lighter without JDK 21 + Ghidra). Enable with:
+# radare2 + binwalk are lightweight CLIs and live in the base apt set
+# above, so bash can run them in every sandbox. Only Ghidra (JDK 21 +
+# the ~500 MB suite) is gated by this build ARG so the default sandbox
+# image stays lean. Enable with:
 #   docker build --build-arg INSTALL_REVERSING=true ...
 # or, via docker-compose, set INSTALL_REVERSING=true in .env when running
 # with COMPOSE_PROFILES=reversing. The ghidra-mcp sidecar service in
@@ -223,8 +231,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
         apt-get update && \
         apt-get install -y --no-install-recommends --no-install-suggests \
             openjdk-21-jdk-headless \
-            radare2 \
-            binwalk \
             unzip && \
         curl -fsSL -o /tmp/ghidra.zip \
             "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC_${GHIDRA_BUILD_DATE}.zip" && \
@@ -235,7 +241,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
         mv "/opt/ghidra_${GHIDRA_VERSION}_PUBLIC" /opt/ghidra && \
         rm /tmp/ghidra.zip ; \
     else \
-        echo "INSTALL_REVERSING=false — skipping JDK 21 + Ghidra + radare2 + binwalk" ; \
+        echo "INSTALL_REVERSING=false — skipping JDK 21 + Ghidra (radare2 + binwalk are in the base image)" ; \
     fi
 
 ENV GHIDRA_INSTALL_DIR=/opt/ghidra \

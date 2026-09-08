@@ -474,17 +474,35 @@ CAPABILITY_REGISTRY: tuple[Capability, ...] = (
     Capability(
         id="impacket",
         category="ad",
-        description="Python AD/SMB/Kerberos toolkit (secretsdump, psexec, wmiexec, etc.)",
+        description=(
+            "Python AD/SMB/Kerberos toolkit. Kali installs the example scripts as "
+            "``impacket-``-prefixed executables (e.g. impacket-secretsdump), NOT the "
+            "``.py`` names. The library ships in python3-impacket; the CLI suite "
+            "(incl. impacket-ntlmrelayx for the Responder relay chain) is in "
+            "impacket-scripts."
+        ),
         binaries=(
-            "secretsdump.py",
-            "psexec.py",
-            "wmiexec.py",
-            "smbexec.py",
-            "getnpusers.py",
-            "getuserspns.py",
+            "impacket-secretsdump",
+            "impacket-ntlmrelayx",
+            "impacket-psexec",
+            "impacket-wmiexec",
+            "impacket-smbexec",
+            "impacket-atexec",
+            "impacket-dcomexec",
+            "impacket-GetNPUsers",
+            "impacket-GetUserSPNs",
+            "impacket-getTGT",
+            "impacket-getST",
+            "impacket-ticketer",
+            "impacket-lookupsid",
+            "impacket-samrdump",
+            "impacket-rpcdump",
+            "impacket-mssqlclient",
+            "impacket-smbserver",
+            "impacket-smbclient",
         ),
         delivery="base",
-        apt_packages=("python3-impacket",),
+        apt_packages=("python3-impacket", "impacket-scripts"),
         risk_tier=RiskTier.INTRUSIVE,
         phases=("TA0006", "TA0008"),
         lifecycle=Lifecycle.SUPPORTED,
@@ -656,14 +674,24 @@ CAPABILITY_REGISTRY: tuple[Capability, ...] = (
         risk_tier=RiskTier.PASSIVE,
         lifecycle=Lifecycle.SUPPORTED,
     ),
-    # ── Profile-gated: Reversing ──
+    # ── Reversing ──
+    # radare2 + binwalk are lightweight apt CLIs and live in the base image,
+    # so bash can run them directly. Ghidra is a ~500 MB JDK+suite that is
+    # NOT in the sandbox where bash executes — it is reached through the
+    # dedicated ``ghidra_*`` @tool wrappers backed by the ghidra-mcp sidecar
+    # (delivery="sidecar"), so it must not be advertised as a bash binary.
     Capability(
         id="ghidra",
         category="reversing",
-        description="NSA binary analysis and reverse engineering suite",
+        description=(
+            "NSA binary analysis suite. Not runnable from bash — use the dedicated "
+            "ghidra_analyze / ghidra_decompile / ghidra_xrefs tools after "
+            "ops_start('reversing')."
+        ),
         binaries=("ghidra",),
-        delivery="profile:reversing",
+        delivery="sidecar",
         risk_tier=RiskTier.PASSIVE,
+        requires_service="ghidra-mcp",
         requires_profile="reversing",
         lifecycle=Lifecycle.SUPPORTED,
     ),
@@ -672,9 +700,9 @@ CAPABILITY_REGISTRY: tuple[Capability, ...] = (
         category="reversing",
         description="Reverse engineering framework (CLI)",
         binaries=("radare2", "r2"),
-        delivery="profile:reversing",
+        delivery="base",
+        apt_packages=("radare2",),
         risk_tier=RiskTier.PASSIVE,
-        requires_profile="reversing",
         lifecycle=Lifecycle.SUPPORTED,
     ),
     Capability(
@@ -682,9 +710,9 @@ CAPABILITY_REGISTRY: tuple[Capability, ...] = (
         category="reversing",
         description="Firmware analysis and extraction tool",
         binaries=("binwalk",),
-        delivery="profile:reversing",
+        delivery="base",
+        apt_packages=("binwalk",),
         risk_tier=RiskTier.PASSIVE,
-        requires_profile="reversing",
         lifecycle=Lifecycle.SUPPORTED,
     ),
     # ── Planned (not yet installed — tracked for admission) ──
@@ -856,6 +884,19 @@ def generate_kali_environment_block() -> str:
         for profile, caps in sorted(by_profile.items()):
             tools = ", ".join(sorted({b for c in caps for b in c.binaries}))
             lines.append(f"- **{profile}**: {tools}")
+
+    # Sidecar-delivered tools — reachable via dedicated @tool wrappers, NOT bash.
+    sidecar_caps = [
+        c
+        for c in CAPABILITY_REGISTRY
+        if c.delivery == "sidecar" and c.lifecycle in (Lifecycle.SUPPORTED, Lifecycle.PREVIEW)
+    ]
+    if sidecar_caps:
+        lines.append("")
+        lines.append(
+            "**Via dedicated tools (NOT bash — request via ops_start first):** "
+            + ", ".join(sorted(c.id for c in sidecar_caps))
+        )
 
     # Planned tools advisory
     planned = capabilities_by_lifecycle(Lifecycle.PLANNED)

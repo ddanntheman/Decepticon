@@ -136,6 +136,38 @@ def test_generated_prompt_lists_installed_tools() -> None:
         assert tool in block, f"{tool} should be advertised as installed"
 
 
+def test_impacket_binaries_are_prefixed_executables() -> None:
+    """Kali installs impacket as ``impacket-``-prefixed executables, not the
+    ``.py`` example-script names — the registry must reflect the real image."""
+    cap = BINARY_TO_CAPABILITY["impacket-secretsdump"]
+    assert cap.id == "impacket"
+    assert cap.delivery == "base"
+    assert "impacket-scripts" in cap.apt_packages  # ntlmrelayx et al.
+    assert all(b.startswith("impacket-") for b in cap.binaries)
+    assert not any(b.endswith(".py") for b in cap.binaries)
+
+
+def test_ghidra_is_sidecar_delivered() -> None:
+    """Ghidra is not in the bash sandbox; it is reached via the ghidra-mcp
+    sidecar and dedicated tools, so it must not be a base/profile bash tool."""
+    cap = BINARY_TO_CAPABILITY["ghidra"]
+    assert cap.delivery == "sidecar"
+    assert cap.requires_service == "ghidra-mcp"
+    assert cap.requires_profile == "reversing"
+    # ghidra must be absent from the bash-runnable base binary set.
+    assert "ghidra" not in base_binaries()
+
+
+def test_radare2_and_binwalk_are_base_installed() -> None:
+    """radare2 + binwalk are lightweight CLIs wired into the base image so
+    bash can run them directly (not gated behind the reversing profile)."""
+    for binary in ("radare2", "binwalk"):
+        cap = BINARY_TO_CAPABILITY[binary]
+        assert cap.delivery == "base", f"{binary} should be base-delivered"
+        assert cap.apt_packages
+        assert binary in base_binaries()
+
+
 def test_planned_tools_not_in_base_binaries() -> None:
     planned = capabilities_by_lifecycle(Lifecycle.PLANNED)
     base = base_binaries()
