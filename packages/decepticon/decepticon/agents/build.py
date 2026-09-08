@@ -503,6 +503,20 @@ def build_tools(
         tool_disable=resolved.tool_disable,
     )
 
+    # Role-scope the capability-discovery tool so each agent's search is
+    # biased to what its role should reach (default risk ceiling, phase
+    # highlights, role allowlist). Only rebinds the OSS discovery tool —
+    # a plugin that replaced ``capability_search`` keeps its own. Imported
+    # lazily to keep the tools package off build.py's import path.
+    if "capability_search" in base:
+        from decepticon.tools.discovery import (
+            capability_search as _default_capability_search,
+        )
+        from decepticon.tools.discovery import make_capability_search
+
+        if base["capability_search"] is _default_capability_search:
+            base["capability_search"] = make_capability_search(role)
+
     for name in resolved.tool_disable:
         base.pop(name, None)
     base.update(resolved.tool_replace)

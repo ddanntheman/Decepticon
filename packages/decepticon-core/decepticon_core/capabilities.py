@@ -921,6 +921,60 @@ def search_capabilities(
     return results
 
 
+@dataclass(frozen=True, slots=True)
+class RoleCapabilityPolicy:
+    """Per-role discovery defaults for role/phase/risk-aware search.
+
+    ``phases`` are the MITRE tactic ids the role focuses on — used to
+    *highlight* (never hide) the tools most relevant to the role.
+    ``max_risk`` is the highest risk tier the role reaches for by
+    default; discovery applies it as the default ceiling when the agent
+    does not pass ``max_risk`` explicitly. It shapes discovery only —
+    actual execution stays governed by RoE / HITL, and the agent can
+    always widen the search by passing a higher ``max_risk``.
+    """
+
+    phases: tuple[str, ...] = ()
+    max_risk: RiskTier = RiskTier.HIGH_IMPACT
+
+
+# Role → discovery policy. Keys match the agent role names in
+# ``SLOTS_PER_ROLE``. Roles absent here fall back to no phase highlight
+# and no default risk ceiling (the agent sees the full supported set).
+ROLE_CAPABILITY_POLICY: dict[str, RoleCapabilityPolicy] = {
+    "recon": RoleCapabilityPolicy(phases=("TA0043",), max_risk=RiskTier.BOUNDED_ACTIVE),
+    "osint_operator": RoleCapabilityPolicy(phases=("TA0043",), max_risk=RiskTier.PASSIVE),
+    "exploit": RoleCapabilityPolicy(phases=("TA0001", "TA0002"), max_risk=RiskTier.INTRUSIVE),
+    "postexploit": RoleCapabilityPolicy(
+        phases=("TA0004", "TA0006", "TA0008", "TA0011"), max_risk=RiskTier.HIGH_IMPACT
+    ),
+    "ad_operator": RoleCapabilityPolicy(
+        phases=("TA0004", "TA0006", "TA0008"), max_risk=RiskTier.HIGH_IMPACT
+    ),
+    "cloud_hunter": RoleCapabilityPolicy(phases=("TA0043", "TA0006"), max_risk=RiskTier.INTRUSIVE),
+    "reverser": RoleCapabilityPolicy(phases=("TA0002",), max_risk=RiskTier.INTRUSIVE),
+    "mobile_operator": RoleCapabilityPolicy(phases=("TA0002",), max_risk=RiskTier.INTRUSIVE),
+    "iot_operator": RoleCapabilityPolicy(phases=("TA0002",), max_risk=RiskTier.INTRUSIVE),
+    "ics_operator": RoleCapabilityPolicy(phases=("TA0043",), max_risk=RiskTier.BOUNDED_ACTIVE),
+    "wireless_operator": RoleCapabilityPolicy(max_risk=RiskTier.INTRUSIVE),
+    "phisher": RoleCapabilityPolicy(phases=("TA0001", "TA0006"), max_risk=RiskTier.INTRUSIVE),
+    "supply_chain_operator": RoleCapabilityPolicy(
+        phases=("TA0043",), max_risk=RiskTier.BOUNDED_ACTIVE
+    ),
+    "asvs_assessor": RoleCapabilityPolicy(phases=("TA0001",), max_risk=RiskTier.BOUNDED_ACTIVE),
+    "forensicator": RoleCapabilityPolicy(max_risk=RiskTier.PASSIVE),
+    "analyst": RoleCapabilityPolicy(max_risk=RiskTier.PASSIVE),
+    "contract_auditor": RoleCapabilityPolicy(max_risk=RiskTier.INTRUSIVE),
+}
+
+
+def role_capability_policy(role: str | None) -> RoleCapabilityPolicy | None:
+    """Return the discovery policy for ``role`` (``None`` if unmapped)."""
+    if not role:
+        return None
+    return ROLE_CAPABILITY_POLICY.get(role)
+
+
 def prompt_categories() -> dict[str, list[Capability]]:
     """Group supported/preview capabilities by category for prompt generation."""
     groups: dict[str, list[Capability]] = {}

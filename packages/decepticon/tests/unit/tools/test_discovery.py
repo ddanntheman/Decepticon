@@ -5,11 +5,19 @@ from __future__ import annotations
 import json
 
 from decepticon.tools.bash import BASH_TOOLS
-from decepticon.tools.discovery import CAPABILITY_DISCOVERY_TOOLS, capability_search
+from decepticon.tools.discovery import (
+    CAPABILITY_DISCOVERY_TOOLS,
+    capability_search,
+    make_capability_search,
+)
 
 
 def _invoke(**kwargs: object) -> dict:
     return json.loads(capability_search.invoke(kwargs))
+
+
+def _invoke_role(role: str | None, **kwargs: object) -> dict:
+    return json.loads(make_capability_search(role).invoke(kwargs))
 
 
 def test_capability_search_is_wired_into_bash_tools() -> None:
@@ -58,3 +66,45 @@ def test_planned_hidden_by_default() -> None:
     planned = _invoke(query="volatility", include_planned=True)
     assert default["count"] == 0
     assert planned["count"] >= 1
+
+
+# ── Role scoping (make_capability_search) ───────────────────────────────
+
+
+def test_role_scoped_tool_name_matches_default() -> None:
+    # build_tools swaps by name, and prompts reference "capability_search".
+    assert make_capability_search("recon").name == capability_search.name == "capability_search"
+
+
+def test_role_applies_default_risk_ceiling() -> None:
+    # recon's ceiling is bounded_active — an intrusive tool the unscoped
+    # tool returns must be filtered out, and the default surfaced.
+    unscoped = _invoke(query="secretsdump")
+    assert unscoped["count"] >= 1  # impacket is intrusive
+    scoped = _invoke_role("recon", query="secretsdump")
+    assert scoped["count"] == 0
+    assert scoped["applied_defaults"]["max_risk"] == "bounded_active"
+    assert scoped["role"] == "recon"
+    assert scoped["role_risk_ceiling"] == "bounded_active"
+
+
+def test_explicit_max_risk_overrides_role_ceiling() -> None:
+    scoped = _invoke_role("recon", query="secretsdump", max_risk="intrusive")
+    assert scoped["count"] >= 1
+    assert "applied_defaults" not in scoped
+
+
+def test_role_highlights_recommended_for_phase() -> None:
+    scoped = _invoke_role("recon", category="recon")
+    assert scoped["count"] >= 1
+    assert "TA0043" in scoped["role_phases"]
+    # recon tools are TA0043 — every returned recon-category tool qualifies.
+    assert scoped["recommended_for_role"]
+
+
+def test_unmapped_role_has_no_defaults() -> None:
+    scoped = _invoke_role("decepticon", query="secretsdump")
+    assert scoped["count"] >= 1  # no risk ceiling applied
+    assert "applied_defaults" not in scoped
+    assert "role_risk_ceiling" not in scoped
+    assert scoped["role"] == "decepticon"
