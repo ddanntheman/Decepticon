@@ -240,8 +240,10 @@ _FORBIDDEN_SKILL_INVOCATIONS = {
     r"\./agent\b": "ligolo-agent",
     # chisel is on PATH — no ./chisel dropped-binary form.
     r"\./chisel\b": "chisel",
-    # volatility3 installs the `vol` entrypoint, not a `volatility3` command.
+    # volatility3 installs the `vol` entrypoint, not a `volatility3` command,
+    # and not the `vol3` shorthand some upstream docs use.
     r"\bvolatility3\s+-f\b": "vol -f",
+    r"\bvol3\s+-f\b": "vol -f",
     # Kali prefixes plaso commands; the bare backtick-code forms are stale.
     r"`log2timeline`": "plaso-log2timeline",
     r"`psort`": "plaso-psort",

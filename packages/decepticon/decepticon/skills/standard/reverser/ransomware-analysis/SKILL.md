@@ -151,7 +151,7 @@ strings <TARGET> | grep -c "CryptGenRandom"
 # If absent → may use deterministic key derivation (time-based, PID-based)
 
 # Technique 2: Memory forensics — extract key from process memory
-vol3 -f memory.raw windows.memmap --pid <RANSOMWARE_PID> --dump
+vol -f memory.raw windows.memmap --pid <RANSOMWARE_PID> --dump
 # Search dump for AES key schedule patterns
 python3 << 'EOF'
 import re

@@ -224,18 +224,18 @@ tshark -r challenge.pcap -Y dns -T fields -e dns.qry.name | sort -u | grep -v "\
 
 ```bash
 # Identify OS profile
-vol3 -f memory.raw windows.info 2>/dev/null || vol3 -f memory.raw linux.info
+vol -f memory.raw windows.info 2>/dev/null || vol -f memory.raw linux.info
 
 # Windows
-vol3 -f memory.raw windows.pslist
-vol3 -f memory.raw windows.cmdline
-vol3 -f memory.raw windows.netscan
-vol3 -f memory.raw windows.malfind        # injected code
-vol3 -f memory.raw windows.dumpfiles --pid <PID> --output-dir /tmp/
+vol -f memory.raw windows.pslist
+vol -f memory.raw windows.cmdline
+vol -f memory.raw windows.netscan
+vol -f memory.raw windows.malfind        # injected code
+vol -f memory.raw windows.dumpfiles --pid <PID> --output-dir /tmp/
 
 # Linux
-vol3 -f memory.raw linux.pslist
-vol3 -f memory.raw linux.bash
+vol -f memory.raw linux.pslist
+vol -f memory.raw linux.bash
 
 # Carve files
 foremost -i memory.raw -o /tmp/foremost_out/
