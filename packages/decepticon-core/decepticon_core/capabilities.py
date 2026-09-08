@@ -812,6 +812,98 @@ def security_binaries() -> frozenset[str]:
     return frozenset(out)
 
 
+_RISK_BY_NAME: dict[str, RiskTier] = {tier.name.lower(): tier for tier in RiskTier}
+
+
+def reach_instruction(cap: Capability) -> str:
+    """Human-readable "how do I actually run this" hint for agent discovery.
+
+    Derived from ``delivery`` so the answer can never drift from how the
+    tool is really wired (base bash binary vs. profile vs. sidecar @tool
+    vs. pip vs. external provider).
+    """
+    delivery = cap.delivery
+    if delivery == "base":
+        return "installed in the sandbox — run it directly with the bash tool"
+    if delivery.startswith("profile:"):
+        profile = delivery.removeprefix("profile:")
+        return (
+            f"profile-gated — ask the orchestrator to ops_start the '{profile}' "
+            f"profile, then run it with bash"
+        )
+    if delivery == "sidecar":
+        service = cap.requires_service or cap.id
+        return (
+            f"delivered by the '{service}' sidecar — reach it through the dedicated "
+            f"@tool wrappers, NOT bash; request via ops_start first"
+        )
+    if delivery == "pip":
+        return f"not pre-installed — `pip3 install {cap.id}` in the sandbox, then run with bash"
+    if delivery == "external":
+        return "requires an external provider (hardware/GPU/cloud) — not runnable in the sandbox"
+    return delivery
+
+
+def search_capabilities(
+    *,
+    query: str = "",
+    category: str = "",
+    phase: str = "",
+    max_risk: str | None = None,
+    include_planned: bool = False,
+    role: str | None = None,
+) -> list[Capability]:
+    """Query the registry the way an agent would, to find eligible tools.
+
+    All filters are AND-combined and optional:
+
+      * ``query`` — case-insensitive substring over id, category,
+        description, and binaries.
+      * ``category`` — exact category match (case-insensitive).
+      * ``phase`` — MITRE tactic id present in the capability's phases.
+      * ``max_risk`` — RiskTier name; excludes anything riskier.
+      * ``include_planned`` — also return ``planned`` (not-yet-installed)
+        capabilities; by default only ``supported``/``preview`` show.
+      * ``role`` — honor a capability's role allowlist when it sets one
+        (empty ``roles`` means all roles).
+
+    Raises ``ValueError`` for an unknown ``max_risk`` name.
+    """
+    allowed = {Lifecycle.SUPPORTED, Lifecycle.PREVIEW}
+    if include_planned:
+        allowed.add(Lifecycle.PLANNED)
+
+    risk_ceiling: RiskTier | None = None
+    if max_risk:
+        risk_ceiling = _RISK_BY_NAME.get(max_risk.strip().lower())
+        if risk_ceiling is None:
+            valid = ", ".join(_RISK_BY_NAME)
+            raise ValueError(f"unknown max_risk {max_risk!r}; expected one of: {valid}")
+
+    q = query.strip().lower()
+    cat = category.strip().lower()
+    ph = phase.strip().lower()
+
+    results: list[Capability] = []
+    for cap in CAPABILITY_REGISTRY:
+        if cap.lifecycle not in allowed:
+            continue
+        if cat and cap.category.lower() != cat:
+            continue
+        if ph and not any(ph == p.lower() for p in cap.phases):
+            continue
+        if risk_ceiling is not None and cap.risk_tier.value > risk_ceiling.value:
+            continue
+        if role and cap.roles and role not in cap.roles:
+            continue
+        if q:
+            haystack = " ".join((cap.id, cap.category, cap.description, *cap.binaries)).lower()
+            if q not in haystack:
+                continue
+        results.append(cap)
+    return results
+
+
 def prompt_categories() -> dict[str, list[Capability]]:
     """Group supported/preview capabilities by category for prompt generation."""
     groups: dict[str, list[Capability]] = {}

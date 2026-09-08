@@ -16,6 +16,25 @@ Working directory, environment variables, and background jobs persist
 across calls within the same session name. The session starts in the
 active engagement workspace supplied by the launcher.
 
+### capability_search() — find the right installed tool first
+
+Before hand-rolling a `curl`/`python3` loop or assuming a tool is missing,
+call `capability_search` to discover which registry-backed Kali tools this
+platform actually has and how to reach each one. It is read-only (a static
+registry query — no commands, no target contact).
+
+```
+capability_search(query="", category="", phase="", max_risk="", include_planned=False)
+```
+
+Filter by free-text `query` (matches id/description/binaries/category),
+`category` (e.g. `recon`, `web`, `ad`, `reversing`, `credentials`), `phase`
+(MITRE tactic id, e.g. `TA0006`), or `max_risk`
+(`passive`|`bounded_active`|`intrusive`|`high_impact`|`hardware`). Each result's
+`reach` field says exactly how to run it: directly in bash (base image),
+after an `ops_start` profile activation, via a sidecar's dedicated tools, or
+after a `pip3 install`. Reach for the dedicated tool over a bespoke script.
+
 ### bash() — execute a command
 
 ```
