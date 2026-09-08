@@ -7,6 +7,7 @@ import pytest
 from decepticon_core.capabilities import (
     BINARY_TO_CAPABILITY,
     CAPABILITY_REGISTRY,
+    Capability,
     Lifecycle,
     RiskTier,
     reach_instruction,
@@ -66,6 +67,46 @@ def test_reach_instruction_reflects_delivery() -> None:
     assert "run it directly" in reach_instruction(BINARY_TO_CAPABILITY["nmap"])
     assert "sidecar" in reach_instruction(BINARY_TO_CAPABILITY["ghidra"])
     assert "NOT bash" in reach_instruction(BINARY_TO_CAPABILITY["ghidra"])
+
+
+def test_reach_instruction_base_capability_with_service_requires_ops_start() -> None:
+    # Sliver ships in the base image but is inert until its c2-sliver
+    # workload runs — the hint must not claim it is directly runnable and
+    # must have the agent confirm readiness before invoking.
+    sliver = BINARY_TO_CAPABILITY["sliver"]
+    assert sliver.delivery == "base"
+    assert sliver.requires_service == "c2-sliver"
+    text = reach_instruction(sliver)
+    assert "c2-sliver" in text
+    assert "ops_start" in text
+    assert "ops_status" in text
+    assert "run it directly" not in text
+
+
+def test_reach_instruction_pip_uses_break_system_packages() -> None:
+    # Kali's Python is externally managed; plain pip3 install is rejected.
+    supported_pip = Capability(
+        id="some-pip-tool",
+        category="dfir",
+        description="hypothetical supported pip tool",
+        binaries=("some-pip-tool",),
+        delivery="pip",
+        lifecycle=Lifecycle.SUPPORTED,
+    )
+    text = reach_instruction(supported_pip)
+    assert "--break-system-packages" in text
+    assert "some-pip-tool" in text
+
+
+def test_reach_instruction_planned_tool_is_not_installed() -> None:
+    # Planned tools (any delivery) must never be described as installed,
+    # or agents will invoke commands that do not exist.
+    for binary in ("chisel", "ligolo-ng", "vol", "certipy"):
+        cap = BINARY_TO_CAPABILITY[binary]
+        assert cap.lifecycle is Lifecycle.PLANNED
+        text = reach_instruction(cap)
+        assert "not pre-installed" in text
+        assert "installed in the sandbox" not in text
 
 
 def test_reach_instruction_covers_every_registry_delivery() -> None:

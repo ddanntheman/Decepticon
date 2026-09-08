@@ -818,12 +818,26 @@ _RISK_BY_NAME: dict[str, RiskTier] = {tier.name.lower(): tier for tier in RiskTi
 def reach_instruction(cap: Capability) -> str:
     """Human-readable "how do I actually run this" hint for agent discovery.
 
-    Derived from ``delivery`` so the answer can never drift from how the
-    tool is really wired (base bash binary vs. profile vs. sidecar @tool
-    vs. pip vs. external provider).
+    Derived from ``lifecycle`` and ``delivery`` so the answer can never
+    drift from how the tool is really wired: planned tools are reported as
+    not-yet-installed, and installed tools are grouped by delivery (base
+    bash binary vs. profile vs. sidecar @tool vs. pip vs. external
+    provider), with a base tool's ``requires_service`` surfaced too.
     """
+    if cap.lifecycle is Lifecycle.PLANNED:
+        return (
+            "planned — not pre-installed. Do not assume the binary exists; install "
+            "it yourself if the engagement needs it (see the <KALI_ENVIRONMENT> "
+            '"Not yet installed" list), then run with bash'
+        )
     delivery = cap.delivery
     if delivery == "base":
+        if cap.requires_service:
+            return (
+                f"installed in the sandbox, but needs the '{cap.requires_service}' "
+                f"workload running — ask the orchestrator to ops_start it and confirm "
+                f"it is running (ops_status) before invoking it with the bash tool"
+            )
         return "installed in the sandbox — run it directly with the bash tool"
     if delivery.startswith("profile:"):
         profile = delivery.removeprefix("profile:")
@@ -838,7 +852,10 @@ def reach_instruction(cap: Capability) -> str:
             f"@tool wrappers, NOT bash; request via ops_start first"
         )
     if delivery == "pip":
-        return f"not pre-installed — `pip3 install {cap.id}` in the sandbox, then run with bash"
+        return (
+            f"not pre-installed — `pip3 install --break-system-packages {cap.id}` "
+            f"in the sandbox (externally-managed Python), then run with bash"
+        )
     if delivery == "external":
         return "requires an external provider (hardware/GPU/cloud) — not runnable in the sandbox"
     return delivery
