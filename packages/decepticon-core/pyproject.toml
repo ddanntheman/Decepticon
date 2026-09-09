@@ -7,7 +7,12 @@ version = "0.0.0"
 description = "Decepticon contract layer: pure types, protocols, plugin contracts, registry primitives"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-requires-python = ">=3.13"
+# The contract layer is the only package downstream consumers depend on, so
+# its floor is deliberately lower than the rest of the workspace (>=3.13):
+# it must install on consumers still on 3.11/3.12 (e.g. DUEDILI). It is pure
+# pydantic with no 3.12/3.13-only syntax; validated importing + the full test
+# suite on 3.11. The framework (`decepticon`) and dev workspace stay 3.13.
+requires-python = ">=3.11"
 
 authors = [
     { name = "Decepticon Team" }
@@ -23,6 +28,8 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Security",
     "Typing :: Typed",

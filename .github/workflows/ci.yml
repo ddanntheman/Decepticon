@@ -272,6 +272,53 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  # ── decepticon-core Python floor guard ──────────────────────────────
+  # decepticon-core is the ONLY package downstream consumers depend on
+  # (e.g. DUEDILI's Track B pen-test module), and its `requires-python`
+  # floor is deliberately lower than the rest of the workspace (>=3.11 vs
+  # >=3.13). The main `python` job only ever exercises 3.13, so nothing
+  # else catches a 3.12/3.13-only construct sneaking into the contract
+  # layer and silently breaking those consumers. This job installs
+  # decepticon-core ALONE on 3.11 (only its own deps — pydantic, no
+  # framework) and imports every submodule, so the floor cannot regress
+  # unnoticed. Cheap (<1 min) and import-only, so it stays robust as the
+  # contract surface grows.
+  core-py311-floor:
+    name: decepticon-core floor (py3.11 import)
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          version: "0.8.15"
+          enable-cache: true
+      # Import every decepticon_core submodule under 3.11 with ONLY the
+      # package's own declared deps (no workspace, no framework). Fails if
+      # the contract layer uses syntax/stdlib newer than its 3.11 floor.
+      - name: Import decepticon_core on Python 3.11
+        run: |
+          uv run --python 3.11 --isolated --no-project \
+            --with ./packages/decepticon-core \
+            python - <<'PY'
+          import importlib, pkgutil, sys
+          import decepticon_core
+          failed = False
+          for mod in pkgutil.walk_packages(
+              decepticon_core.__path__, decepticon_core.__name__ + "."
+          ):
+              try:
+                  importlib.import_module(mod.name)
+              except Exception as exc:  # noqa: BLE001 — report all, fail once
+                  failed = True
+                  print(f"FAIL {mod.name}: {exc!r}")
+          if failed:
+              sys.exit("decepticon_core failed to import on 3.11 — floor regressed")
+          print(f"decepticon_core imports cleanly on {sys.version.split()[0]}")
+          PY
+
   # ── PR coverage visibility (NON-BLOCKING) ───────────────────────────
   # Informational coverage job that runs in PARALLEL with the blocking
   # `python` job, so it does NOT add to merge latency. The blocking PR
