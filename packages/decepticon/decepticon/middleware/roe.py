@@ -49,7 +49,7 @@ import random
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -339,11 +339,18 @@ def _redact_secrets(cmd: str) -> str:
     return out
 
 
+def _tool_call_field(request, name: str) -> Any:
+    """Read ``name`` from the request's tool call, which LangChain passes as a dict."""
+    call = getattr(request, "tool_call", None)
+    if isinstance(call, Mapping):
+        return call.get(name)
+    return getattr(call, name, None) if call else None
+
+
 def _tool_call_args(request) -> dict[str, Any]:
     args = getattr(request, "tool_call_args", None)
     if not isinstance(args, dict):
-        last = getattr(request, "tool_call", None)
-        args = getattr(last, "args", None) if last else None
+        args = _tool_call_field(request, "args")
     return args if isinstance(args, dict) else {}
 
 
@@ -727,8 +734,7 @@ def _tcid(request) -> str | None:
     tc = getattr(request, "tool_call_id", None)
     if isinstance(tc, str):
         return tc
-    last = getattr(request, "tool_call", None)
-    tc_attr = getattr(last, "id", None) if last else None
+    tc_attr = _tool_call_field(request, "id")
     return tc_attr if isinstance(tc_attr, str) else None
 
 
