@@ -6,6 +6,7 @@ import asyncio
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -192,3 +193,110 @@ def test_agent_graph_refuses_then_allows_native_calls(
     assert "FORBIDDEN_COMMAND" in messages[2].content
     records = [json.loads(line) for line in (workspace / "audit.jsonl").read_text().splitlines()]
     assert [record["decision"] for record in records] == ["refuse", "allow", "refuse", "allow"]
+
+
+@pytest.mark.parametrize("use_async", [False, True], ids=["sync", "async"])
+@pytest.mark.parametrize("native", [False, True], ids=["legacy", "native"])
+@pytest.mark.parametrize(
+    ("template", "redacted"),
+    [
+        (
+            'curl -H "Authorization: Bearer {secret}" https://allowed.example/',
+            'curl -H "Authorization: ***" https://allowed.example/',
+        ),
+        ("curl https://user:{secret}@allowed.example/", "curl https://user:***@allowed.example/"),
+        ('tool --password="{secret}"', "tool --password=***"),
+        ("tool --token {secret}", "tool --token ***"),
+    ],
+)
+def test_abort_audit_redacts_before_truncation(
+    workspace: Path,
+    local_tools: tuple[dict[str, BaseTool], list[str]],
+    use_async: bool,
+    native: bool,
+    template: str,
+    redacted: str,
+) -> None:
+    (workspace / ".abort").touch()
+    tools, _calls = local_tools
+    canary = "abort-canary-" + "x" * 600
+    command = template.format(secret=canary)
+    if native:
+        request = ToolCallRequest(
+            tool_call={
+                "name": "bash",
+                "args": {"command": command},
+                "id": "abort-id",
+                "type": "tool_call",
+            },
+            tool=tools["bash"],
+            state={"workspace_path": str(workspace)},
+            runtime=MagicMock(),
+        )
+    else:
+        request = SimpleNamespace(
+            tool=tools["bash"],
+            tool_call_args={"command": command},
+            tool_call_id="abort-id",
+            state={"workspace_path": str(workspace)},
+        )
+    sink_path = workspace / "audit.jsonl"
+    mw = RoEGuardrailMiddleware(sink=RoEAuditSink(path=sink_path))
+    handler = AsyncMock() if use_async else MagicMock()
+    response = (
+        asyncio.run(mw.awrap_tool_call(request, handler))
+        if use_async
+        else mw.wrap_tool_call(request, handler)
+    )
+    handler.assert_not_called()
+    assert isinstance(response, ToolMessage)
+    assert response.tool_call_id == "abort-id"
+    raw = sink_path.read_text(encoding="utf-8")
+    assert "abort-canary-" not in raw
+    record = json.loads(raw)
+    assert record["command_excerpt"] == redacted
+    assert record["event"] == "abort"
+
+
+@pytest.mark.parametrize("use_async", [False, True], ids=["sync", "async"])
+def test_agent_graph_abort_redacts_command(
+    workspace: Path, local_tools: tuple[dict[str, BaseTool], list[str]], use_async: bool
+) -> None:
+    (workspace / ".abort").touch()
+    tools, calls = local_tools
+    model = _FixtureModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "bash",
+                        "args": {"command": "tool --token abort-graph-canary"},
+                        "id": "abort-id",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    sink_path = workspace / "audit.jsonl"
+    graph = create_agent(
+        model=model,
+        tools=list(tools.values()),
+        middleware=[RoEGuardrailMiddleware(sink=RoEAuditSink(path=sink_path))],
+        state_schema=_WorkspaceState,
+    )
+    initial = {
+        "messages": [HumanMessage(content="Run the offline abort fixture")],
+        "workspace_path": str(workspace),
+    }
+    completed = asyncio.run(graph.ainvoke(initial)) if use_async else graph.invoke(initial)
+    assert calls == []
+    messages = [message for message in completed["messages"] if isinstance(message, ToolMessage)]
+    assert len(messages) == 1
+    assert messages[0].tool_call_id == "abort-id"
+    assert "EMERGENCY_ABORT" in messages[0].content
+    raw = sink_path.read_text(encoding="utf-8")
+    assert "abort-graph-canary" not in raw
+    assert json.loads(raw)["command_excerpt"] == "tool --token ***"
