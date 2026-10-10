@@ -13,10 +13,12 @@ environment must never appear in any tool output.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from decepticon.middleware.roe import _load_rules_for_workspace
 from decepticon.tools.research import bounty_intake as bi
 from decepticon.tools.research.bounty_scope import ingest_bounty_scope
 
@@ -357,3 +359,50 @@ def test_ingest_bounty_scope_folds_rules_into_enforcement(
     assert enforced["min_inter_request_delay_ms"] == 250
     assert enforced["max_concurrent_connections"] == 4
     assert r"(?i)\bnuclei\b" in enforced["forbidden_command_patterns"]
+
+
+@pytest.mark.parametrize("delay_ms", [3_600_001, 10**309], ids=["over-limit", "overflow"])
+@pytest.mark.parametrize("existing_policy", [False, True], ids=["new", "existing"])
+@pytest.mark.parametrize("mode", ["audit", "warn", "enforce"])
+def test_ingest_rejects_excessive_delay_without_writing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    delay_ms: int,
+    existing_policy: bool,
+    mode: str,
+) -> None:
+    monkeypatch.setenv("DECEPTICON_WORKSPACE_PATH", str(tmp_path))
+    roe_path = tmp_path / "plan" / "roe.json"
+    original = '{"machine_enforcement": {"mode": "enforce", "in_scope": ["old.example"]}}'
+    if existing_policy:
+        roe_path.parent.mkdir()
+        roe_path.write_text(original, encoding="utf-8")
+
+    response = json.loads(
+        ingest_bounty_scope.invoke(
+            {"in_scope": '["new.example"]', "min_inter_request_delay_ms": delay_ms, "mode": mode}
+        )
+    )
+    assert response["error"] == "invalid_min_inter_request_delay"
+    assert response["hard_enforced"] is False
+    assert response["roe_path"] is None
+    assert "3600000" in response["detail"]
+    if existing_policy:
+        assert roe_path.read_text(encoding="utf-8") == original
+    else:
+        assert not roe_path.parent.exists()
+
+
+@pytest.mark.parametrize("delay_ms", [0, 1, 3_600_000])
+def test_ingest_supported_delay_loads_unchanged(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, delay_ms: int
+) -> None:
+    monkeypatch.setenv("DECEPTICON_WORKSPACE_PATH", str(tmp_path))
+    response = json.loads(
+        ingest_bounty_scope.invoke(
+            {"in_scope": '["allowed.example"]', "min_inter_request_delay_ms": delay_ms}
+        )
+    )
+    assert response["hard_enforced"] is True
+    assert response["min_inter_request_delay_ms"] == delay_ms
+    assert _load_rules_for_workspace(str(tmp_path)).min_inter_request_delay_ms == delay_ms

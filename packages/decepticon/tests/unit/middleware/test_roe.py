@@ -1238,6 +1238,41 @@ def test_invalid_restriction_is_refused_instead_of_discarded(
     assert "INVALID_ROE" in result.content
 
 
+@pytest.mark.parametrize("use_async", [False, True], ids=["sync", "async"])
+@pytest.mark.parametrize("field", ["in_scope", "out_of_scope", "forbidden_destinations"])
+@pytest.mark.parametrize("host", ["123", "123.", "123.456", "999.1.1.1"])
+def test_numeric_auto_host_preserves_literal_matching(
+    tmp_path: Path, field: str, host: str, use_async: bool
+) -> None:
+    policy = {"mode": "enforce", field: [host]}
+    _write_roe(tmp_path, policy)
+    expected_rules = MachineEnforcement.from_dict(policy)
+    mw = RoEGuardrailMiddleware()
+    for requested_host in (host, "unrelated.example"):
+        req = _make_network_request(
+            "http_request",
+            {"url": f"http://{requested_host}/"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        tool_msg = ToolMessage(content="allowed", tool_call_id="tc-test")
+        handler = (
+            AsyncMock(return_value=tool_msg) if use_async else MagicMock(return_value=tool_msg)
+        )
+        decision = evaluate_target(requested_host, expected_rules)
+        response = (
+            asyncio.run(mw.awrap_tool_call(req, handler))
+            if use_async
+            else mw.wrap_tool_call(req, handler)
+        )
+        assert "INVALID_ROE" not in response.content
+        if decision.allow:
+            handler.assert_called_once()
+            assert response.content == "allowed"
+        else:
+            handler.assert_not_called()
+            assert decision.reason_code in response.content
+
+
 def test_first_gated_call_never_waits_on_fresh_clock(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("decepticon.middleware.roe.time.monotonic", lambda: 1.0)
     mw = RoEGuardrailMiddleware(jitter_frac=0.0)
