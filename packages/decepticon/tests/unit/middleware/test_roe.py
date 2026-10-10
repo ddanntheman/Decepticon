@@ -8,7 +8,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import ToolMessage
@@ -1057,28 +1057,113 @@ class TestFqdnTrailingDotNormalization:
         assert evaluate_target("other.example.", rules).allow is False
 
 
-class TestLoadRulesFallback:
-    def test_malformed_roe_json_falls_back_to_audit(self, tmp_path: Path) -> None:
-        (tmp_path / "plan").mkdir(parents=True, exist_ok=True)
-        (tmp_path / "plan" / "roe.json").write_text("{not valid json", encoding="utf-8")
-        rules = _load_rules_for_workspace(str(tmp_path))
-        assert rules.mode == EnforcementMode.AUDIT
+class TestInvalidRoE:
+    @pytest.fixture(
+        params=[
+            b"{not valid json",
+            b"\xff",
+            b"[]",
+            b"null",
+            b'{"machine_enforcement": null}',
+            b'{"machine_enforcement": ["enforce"]}',
+            b'{"machine_enforcement": {"mode": "enfroce"}}',
+            b'{"machine_enforcement": {"mode": false}}',
+            b'{"machine_enforcement": {"min_inter_request_delay_ms": "invalid"}}',
+        ],
+        ids=[
+            "json",
+            "encoding",
+            "array",
+            "null",
+            "null-block",
+            "list-block",
+            "mode",
+            "boolean-mode",
+            "invalid-delay",
+        ],
+    )
+    def invalid_roe(self, tmp_path: Path, request: pytest.FixtureRequest) -> Path:
+        roe_path = tmp_path / "plan" / "roe.json"
+        roe_path.parent.mkdir()
+        roe_path.write_bytes(request.param)
+        return roe_path
 
-    def test_malformed_roe_json_gated_call_allowed_and_logged(self, tmp_path: Path) -> None:
-        (tmp_path / "plan").mkdir(parents=True, exist_ok=True)
-        (tmp_path / "plan" / "roe.json").write_text("}}garbage{{", encoding="utf-8")
-        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+    def test_invalid_document_raises_instead_of_defaulting_to_audit(
+        self, invalid_roe: Path
+    ) -> None:
+        with pytest.raises(ValueError, match="RoE"):
+            _load_rules_for_workspace(str(invalid_roe.parent.parent))
+
+    @pytest.mark.parametrize("use_async", [False, True], ids=["sync", "async"])
+    def test_invalid_document_refuses_gated_call_and_audits(
+        self, invalid_roe: Path, use_async: bool
+    ) -> None:
+        workspace = invalid_roe.parent.parent
+        sink = RoEAuditSink(path=workspace / "audit.jsonl")
         mw = RoEGuardrailMiddleware(sink=sink)
-        req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
-        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
-        result = mw.wrap_tool_call(req, handler)
-        assert handler.called
+        state = {"workspace_path": str(workspace)}
+        req = _make_request("bash", "printf harmless", state=state)
+        handler = AsyncMock() if use_async else MagicMock()
+        if use_async:
+            asyncio.run(mw.abefore_agent(state, runtime=None))
+            result = asyncio.run(mw.awrap_tool_call(req, handler))
+        else:
+            mw.before_agent(state, runtime=None)
+            result = mw.wrap_tool_call(req, handler)
+        handler.assert_not_called()
         assert isinstance(result, ToolMessage)
-        assert result.content == "ok"
-        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
-        assert len(recs) == 1
-        assert recs[0]["decision"] == "allow"
-        assert recs[0]["mode"] == "audit"
+        assert "[ROE_REFUSED]" in result.content
+        assert "INVALID_ROE" in result.content
+        recs = [json.loads(line) for line in (workspace / "audit.jsonl").read_text().splitlines()]
+        assert recs[0]["decision"] == "refuse"
+        assert recs[0]["reason_code"] == "INVALID_ROE"
+        assert recs[0]["mode"] == "enforce"
+        assert not mw._egress_provisioned
+
+    @pytest.mark.parametrize("mode", ["audit", "warn", "enforce"])
+    def test_repaired_document_restores_execution(self, tmp_path: Path, mode: str) -> None:
+        _write_roe(tmp_path, {"mode": "invalid"})
+        mw = RoEGuardrailMiddleware()
+        req = _make_request("bash", "printf harmless", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        refused = mw.wrap_tool_call(req, handler)
+        handler.assert_not_called()
+        assert "INVALID_ROE" in refused.content
+        _write_roe(tmp_path, {"mode": mode})
+        assert mw.wrap_tool_call(req, handler).content == "ok"
+        handler.assert_called_once()
+
+    @pytest.mark.parametrize("failure", [PermissionError, OSError])
+    def test_read_error_refuses_but_keeps_repair_tools_available(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: type[OSError]
+    ) -> None:
+        _write_roe(tmp_path, {"mode": "enforce"})
+        original_read = Path.read_text
+        roe_path = tmp_path / "plan" / "roe.json"
+
+        def read_text(path: Path, *args, **kwargs) -> str:
+            if path == roe_path:
+                raise failure("cannot read policy")
+            return original_read(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", read_text)
+        mw = RoEGuardrailMiddleware()
+        state = {"workspace_path": str(tmp_path)}
+        mw.before_agent(state, runtime=None)
+        handler = MagicMock(return_value=ToolMessage(content="repair", tool_call_id="tc-test"))
+        refused = mw.wrap_tool_call(_make_request("bash", "printf harmless", state), handler)
+        handler.assert_not_called()
+        assert "INVALID_ROE" in refused.content
+        assert (
+            mw.wrap_tool_call(_make_request("read_file", state=state), handler).content == "repair"
+        )
+        handler.assert_called_once()
+
+    def test_dangling_policy_symlink_is_not_treated_as_missing(self, tmp_path: Path) -> None:
+        (tmp_path / "plan").mkdir()
+        (tmp_path / "plan" / "roe.json").symlink_to(tmp_path / "missing-policy.json")
+        with pytest.raises(ValueError, match="RoE"):
+            _load_rules_for_workspace(str(tmp_path))
 
 
 class TestToTextFlattening:

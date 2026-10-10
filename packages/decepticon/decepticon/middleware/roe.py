@@ -35,6 +35,7 @@ Reading the RoE:
     middleware can hot-reload an operator-edited RoE without restart.
   * ``machine_enforcement`` block is optional - when absent, the
     middleware logs every tool call but never blocks (``mode=audit``).
+  * An unreadable or invalid explicit RoE refuses gated calls until repaired.
 """
 
 from __future__ import annotations
@@ -137,19 +138,36 @@ NETWORK_TARGET_EXTRACTORS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
 }
 
 
+class InvalidRoEError(ValueError):
+    """An explicit RoE document cannot be read or interpreted safely."""
+
+
 def _load_rules_for_workspace(workspace_path: str | None) -> MachineEnforcement:
     if not workspace_path:
         return MachineEnforcement()
     roe_path = Path(workspace_path) / "plan" / "roe.json"
-    if not roe_path.exists():
-        return MachineEnforcement()
     try:
-        data = json.loads(roe_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        log.warning("roe: failed to read %s: %s; defaulting to audit-only mode", roe_path, exc)
+        document = json.loads(roe_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        if not roe_path.is_symlink():
+            return MachineEnforcement()
+        raise InvalidRoEError("RoE file links to a missing policy") from exc
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise InvalidRoEError("RoE file is unreadable or contains invalid JSON") from exc
+    if not isinstance(document, dict):
+        raise InvalidRoEError("RoE document must be a JSON object")
+    if "machine_enforcement" not in document:
         return MachineEnforcement()
-    block = data.get("machine_enforcement") if isinstance(data, dict) else None
-    return MachineEnforcement.from_dict(block)
+    block = document["machine_enforcement"]
+    if not isinstance(block, dict):
+        raise InvalidRoEError("RoE machine_enforcement must be a JSON object")
+    mode = str(block.get("mode", EnforcementMode.AUDIT.value)).lower()
+    if mode not in {member.value for member in EnforcementMode}:
+        raise InvalidRoEError("RoE enforcement mode must be audit, warn or enforce")
+    try:
+        return MachineEnforcement.from_dict(block)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise InvalidRoEError("RoE machine_enforcement cannot be interpreted") from exc
 
 
 def _abort_marker_present(workspace_path: str | None) -> bool:
@@ -502,7 +520,11 @@ class RoEGuardrailMiddleware(AgentMiddleware):
         workspace = get("workspace_path") or None
         if not workspace:
             return
-        rules = _load_rules_for_workspace(workspace)
+        try:
+            rules = _load_rules_for_workspace(workspace)
+        except InvalidRoEError as exc:
+            log.error("roe: %s; gated calls will be refused until the policy is repaired", exc)
+            return
         if rules.mode != EnforcementMode.ENFORCE:
             return
         with self._egress_lock:
@@ -536,7 +558,16 @@ class RoEGuardrailMiddleware(AgentMiddleware):
         state = getattr(request, "state", {}) or {}
         get = state.get if hasattr(state, "get") else (lambda _k, _d=None: None)
         workspace = get("workspace_path") or None
-        rules = _load_rules_for_workspace(workspace)
+        try:
+            rules = _load_rules_for_workspace(workspace)
+        except InvalidRoEError as exc:
+            decision = Decision(
+                allow=False,
+                reason_code="INVALID_ROE",
+                reason_detail=f"{exc}. Repair plan/roe.json before retrying gated tools.",
+                risk="high",
+            )
+            return decision, MachineEnforcement(mode=EnforcementMode.ENFORCE), tool_name
         time_decision = evaluate_time_window(self._now(), rules)
         if not time_decision.allow:
             return time_decision, rules, tool_name
