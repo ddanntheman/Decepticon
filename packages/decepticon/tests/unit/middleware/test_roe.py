@@ -1238,6 +1238,14 @@ def test_invalid_restriction_is_refused_instead_of_discarded(
     assert "INVALID_ROE" in result.content
 
 
+def test_first_gated_call_never_waits_on_fresh_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("decepticon.middleware.roe.time.monotonic", lambda: 1.0)
+    mw = RoEGuardrailMiddleware(jitter_frac=0.0)
+    rules = MachineEnforcement.from_dict({"mode": "enforce", "min_inter_request_delay_ms": 30_000})
+    assert mw._pace_wait_seconds(rules) == 0.0
+    assert mw._pace_wait_seconds(rules) == pytest.approx(30.0)
+
+
 class TestToTextFlattening:
     def test_list_of_str_flattened_in_warn(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})

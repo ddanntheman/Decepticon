@@ -139,8 +139,32 @@ NETWORK_TARGET_EXTRACTORS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
 }
 
 
+MAX_INTER_REQUEST_DELAY_MS = 3_600_000
+
+
 class InvalidRoEError(ValueError):
     """An explicit RoE document cannot be read or interpreted safely."""
+
+
+def _validate_target_entry(field: str, entry: Any) -> None:
+    """Reject a scope or destination entry the matcher would otherwise never match."""
+    if field == "forbidden_destinations" and not isinstance(entry, str):
+        raise InvalidRoEError("RoE forbidden_destinations entries must be strings")
+    target = entry.get("target") if isinstance(entry, dict) else entry
+    kind = entry.get("type", "auto") if isinstance(entry, dict) else "auto"
+    if not isinstance(target, str) or not target.strip():
+        raise InvalidRoEError(f"RoE {field} entries require a nonempty target string")
+    if kind not in ("auto", "host", "ip", "cidr", "domain-glob"):
+        raise InvalidRoEError(f"RoE {field} contains an unsupported target type")
+    try:
+        if kind == "cidr" or (kind == "auto" and "/" in target):
+            ipaddress.ip_network(target, strict=False)
+        elif kind == "ip":
+            ipaddress.ip_address(target.rstrip("."))
+        elif kind == "auto" and target.rstrip(".").replace(".", "").isdigit():
+            ipaddress.ip_address(target.rstrip("."))
+    except ValueError as exc:
+        raise InvalidRoEError(f"RoE {field} contains an invalid network target") from exc
 
 
 def _load_rules_for_workspace(workspace_path: str | None) -> MachineEnforcement:
@@ -184,24 +208,18 @@ def _load_rules_for_workspace(workspace_path: str | None) -> MachineEnforcement:
             continue
         if type(value) is not int or value < 0:
             raise InvalidRoEError(f"RoE {field} must be a nonnegative integer")
-    for field in ("in_scope", "out_of_scope"):
+    if block.get("min_inter_request_delay_ms", 0) > MAX_INTER_REQUEST_DELAY_MS:
+        raise InvalidRoEError(
+            f"RoE min_inter_request_delay_ms must not exceed {MAX_INTER_REQUEST_DELAY_MS}"
+        )
+    for field in ("in_scope", "out_of_scope", "forbidden_destinations"):
         for entry in block.get(field, []):
-            target = entry.get("target") if isinstance(entry, dict) else entry
-            kind = entry.get("type", "auto") if isinstance(entry, dict) else "auto"
-            if not isinstance(target, str) or not target.strip():
-                raise InvalidRoEError(f"RoE {field} entries require a nonempty target string")
-            if kind not in ("auto", "host", "ip", "cidr", "domain-glob"):
-                raise InvalidRoEError(f"RoE {field} contains an unsupported target type")
-            try:
-                if kind == "cidr" or (kind == "auto" and "/" in target):
-                    ipaddress.ip_network(target, strict=False)
-                elif kind == "ip":
-                    ipaddress.ip_address(target.rstrip("."))
-            except ValueError as exc:
-                raise InvalidRoEError(f"RoE {field} contains an invalid network target") from exc
-    for field in ("forbidden_destinations", "forbidden_command_patterns"):
-        if any(not isinstance(entry, str) or not entry.strip() for entry in block.get(field, [])):
-            raise InvalidRoEError(f"RoE {field} entries must be nonempty strings")
+            _validate_target_entry(field, entry)
+    if any(
+        not isinstance(entry, str) or not entry.strip()
+        for entry in block.get("forbidden_command_patterns", [])
+    ):
+        raise InvalidRoEError("RoE forbidden_command_patterns entries must be nonempty strings")
     try:
         for pattern in block.get("forbidden_command_patterns", []):
             re.compile(pattern)
@@ -389,7 +407,7 @@ class RoEGuardrailMiddleware(AgentMiddleware):
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._jitter_frac = max(0.0, jitter_frac)
         self._pace_lock = threading.Lock()
-        self._last_gated_monotonic = 0.0
+        self._last_gated_monotonic: float | None = None
         self._egress_lock = threading.Lock()
         self._egress_provisioned: set[str] = set()
 
@@ -681,7 +699,8 @@ class RoEGuardrailMiddleware(AgentMiddleware):
             return 0.0
         now = time.monotonic()
         with self._pace_lock:
-            start_at = max(now, self._last_gated_monotonic + floor)
+            last = self._last_gated_monotonic
+            start_at = now if last is None else max(now, last + floor)
             self._last_gated_monotonic = start_at
         wait = start_at - now
         if wait > 0 and self._jitter_frac > 0:

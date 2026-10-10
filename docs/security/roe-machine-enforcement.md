@@ -56,7 +56,10 @@ Scope entries accept a nonempty string (`"*.acme.com"`) or an object
 (`{"target": "10.0.0.0/24", "type": "cidr"}`). Malformed entries are refused,
 not discarded. Scope, destination, command-pattern and time-window fields
 must be arrays. Boolean flags must be JSON booleans; concurrency and delay
-values must be nonnegative integers (concurrency also accepts `null`).
+values must be nonnegative integers (concurrency also accepts `null`), and
+`min_inter_request_delay_ms` is capped at one hour (3,600,000) so pacing
+cannot stall or overflow. `forbidden_destinations` entries get the same
+IP/CIDR validation as scope entries.
 
 Every authorized or blackout window must have valid, ordered start/end
 values with explicit timezones. Invalid windows and regexes refuse the
