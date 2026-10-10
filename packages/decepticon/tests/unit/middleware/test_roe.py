@@ -1190,6 +1190,10 @@ class TestInvalidRoE:
         {"min_inter_request_delay_ms": -1},
         {"min_inter_request_delay_ms": 1.5},
         {"max_concurrent_connections": "2"},
+        {"forbidden_destinations": ["10.0.0.0/33"]},
+        {"forbidden_destinations": ["999.1.1.1/24"]},
+        {"min_inter_request_delay_ms": 10**309},
+        {"min_inter_request_delay_ms": 3_600_001},
     ],
     ids=[
         "null-scope-entry",
@@ -1212,6 +1216,10 @@ class TestInvalidRoE:
         "negative-delay",
         "fractional-delay",
         "string-concurrency",
+        "invalid-destination-cidr",
+        "invalid-destination-address",
+        "overflowing-delay",
+        "excessive-delay",
     ],
 )
 def test_invalid_restriction_is_refused_instead_of_discarded(
