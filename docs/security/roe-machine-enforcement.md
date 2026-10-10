@@ -57,9 +57,12 @@ Scope entries accept a nonempty string (`"*.acme.com"`) or an object
 not discarded. Scope, destination, command-pattern and time-window fields
 must be arrays. Boolean flags must be JSON booleans; concurrency and delay
 values must be nonnegative integers (concurrency also accepts `null`), and
-`min_inter_request_delay_ms` is capped at one hour (3,600,000) so pacing
-cannot stall or overflow. `forbidden_destinations` entries get the same
-IP/CIDR validation as scope entries.
+`min_inter_request_delay_ms` is capped at one hour (3,600,000) to reject
+unsupported delays before pacing. `ingest_bounty_scope` uses the same
+limit and returns an error without creating or replacing the policy when
+it is exceeded. `forbidden_destinations` entries get the same IP/CIDR
+validation as scope entries. Auto-kind numeric hostnames such as `123`
+retain literal-host matching; explicit IP and CIDR entries must parse.
 
 Every authorized or blackout window must have valid, ordered start/end
 values with explicit timezones. Invalid windows and regexes refuse the
