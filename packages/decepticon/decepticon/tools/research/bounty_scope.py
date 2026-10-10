@@ -36,7 +36,11 @@ from langchain_core.tools import tool
 
 from decepticon.middleware.egress import compile_egress_policy
 from decepticon.tools.research.bounty_intake import SCANNER_COMMAND_PATTERNS
-from decepticon_core.types.roe import EnforcementMode, MachineEnforcement
+from decepticon_core.types.roe import (
+    MAX_INTER_REQUEST_DELAY_MS,
+    EnforcementMode,
+    MachineEnforcement,
+)
 from decepticon_core.utils.logging import get_logger
 
 log = get_logger("research.bounty_scope")
@@ -189,7 +193,8 @@ def ingest_bounty_scope(
             ``'["(?i)\\bmasscan\\b"]'``.
         min_inter_request_delay_ms: Minimum delay between requests, in
             milliseconds, when the program states a request-rate cap (e.g. a
-            10 req/s cap → ``100``). ``0`` leaves it unset.
+            10 req/s cap → ``100``). ``0`` leaves it unset. Values above
+            one hour (3,600,000 ms) are rejected without writing the policy.
         max_concurrent_connections: Cap on concurrent connections when the
             program limits parallelism. ``0`` leaves it unset.
 
@@ -240,6 +245,18 @@ def ingest_bounty_scope(
     forbidden_patterns = list(dict.fromkeys(p for p in forbidden_patterns if p))
 
     delay_ms = max(0, int(min_inter_request_delay_ms or 0))
+    if delay_ms > MAX_INTER_REQUEST_DELAY_MS:
+        return json.dumps(
+            {
+                "error": "invalid_min_inter_request_delay",
+                "detail": (
+                    "min_inter_request_delay_ms must not exceed "
+                    f"{MAX_INTER_REQUEST_DELAY_MS}; RoE policy was not changed"
+                ),
+                "hard_enforced": False,
+                "roe_path": None,
+            }
+        )
     max_conn = int(max_concurrent_connections or 0)
 
     machine_enforcement: dict[str, Any] = {

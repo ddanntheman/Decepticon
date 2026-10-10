@@ -64,6 +64,7 @@ from typing_extensions import override
 from decepticon.middleware._audit_sink import RoEAuditSink
 from decepticon.middleware._command_targets import extract_targets
 from decepticon_core.types.roe import (
+    MAX_INTER_REQUEST_DELAY_MS,
     Decision,
     EnforcementMode,
     MachineEnforcement,
@@ -139,9 +140,6 @@ NETWORK_TARGET_EXTRACTORS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
 }
 
 
-MAX_INTER_REQUEST_DELAY_MS = 3_600_000
-
-
 class InvalidRoEError(ValueError):
     """An explicit RoE document cannot be read or interpreted safely."""
 
@@ -160,8 +158,6 @@ def _validate_target_entry(field: str, entry: Any) -> None:
         if kind == "cidr" or (kind == "auto" and "/" in target):
             ipaddress.ip_network(target, strict=False)
         elif kind == "ip":
-            ipaddress.ip_address(target.rstrip("."))
-        elif kind == "auto" and target.rstrip(".").replace(".", "").isdigit():
             ipaddress.ip_address(target.rstrip("."))
     except ValueError as exc:
         raise InvalidRoEError(f"RoE {field} contains an invalid network target") from exc

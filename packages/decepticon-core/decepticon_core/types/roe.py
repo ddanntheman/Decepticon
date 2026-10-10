@@ -47,6 +47,8 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Iterable
 
+MAX_INTER_REQUEST_DELAY_MS = 3_600_000
+
 
 class EnforcementMode(StrEnum):
     AUDIT = "audit"
