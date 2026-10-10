@@ -33,8 +33,8 @@ compatibility (an engagement that never opts in keeps running).
 | `warn` | Logged; a `[ROE_WARN]` `ToolMessage` is prepended to the tool's output so the model sees it failed RoE, but the call still executes. |
 | `enforce` | Logged; the call short-circuits with a `[ROE_REFUSED]` `ToolMessage`. No bytes leave the sandbox. |
 
-The mode parses case-insensitively; an unrecognized string falls back to
-`audit` rather than erroring.
+The mode parses case-insensitively. An unrecognized mode in an explicit
+RoE file produces `INVALID_ROE` and refuses gated calls until repaired.
 
 ## The `machine_enforcement` block
 
@@ -51,10 +51,18 @@ Fields and defaults (`MachineEnforcement`):
 | `max_concurrent_connections` | int or null | `null` | Carried in the schema; advisory. |
 | `min_inter_request_delay_ms` | int | `0` | Carried in the schema; advisory. |
 
-`from_dict` reads the block; each scope list is parsed by `_parse_rules`,
-which accepts **either** a bare string (`"*.acme.com"`) **or** an object
-(`{"target": "10.0.0.0/24", "type": "cidr"}`). Any other shape is
-skipped.
+The middleware validates the block before constructing `MachineEnforcement`.
+Scope entries accept a nonempty string (`"*.acme.com"`) or an object
+(`{"target": "10.0.0.0/24", "type": "cidr"}`). Malformed entries are refused,
+not discarded. Scope, destination, command-pattern and time-window fields
+must be arrays. Boolean flags must be JSON booleans; concurrency and delay
+values must be nonnegative integers (concurrency also accepts `null`).
+
+Every authorized or blackout window must have valid, ordered start/end
+values with explicit timezones. Invalid windows and regexes refuse the
+whole policy, even if its requested mode is `audit` or `warn`. The shared
+core parser remains permissive for direct callers; the file loader is the
+strict boundary.
 
 ### Scope rules and `resolved_kind`
 
@@ -109,9 +117,9 @@ cloud-credential exfil in enforce mode.
 
 `evaluate_command` runs each `forbidden_command_patterns` regex against
 the literal command string with `re.search`. A match refuses with
-`FORBIDDEN_COMMAND`. Patterns that fail to compile are skipped (the
-evaluator never raises on a bad regex). Patterns are matched against the
-command string, not the full tool-arguments dict.
+`FORBIDDEN_COMMAND`. The file loader rejects patterns that fail to compile;
+the core evaluator remains tolerant of directly constructed rules. Patterns
+are matched against the command string, not the full tool-arguments dict.
 
 ## What gets gated
 
@@ -135,9 +143,12 @@ intended targets from the command text (best-effort regex extraction over
 ~30 kill-chain tools), evaluates the command regexes first, then each
 target, and records the decision regardless of mode.
 
-If `workspace_path` is unset, the RoE fails open to a default
-`MachineEnforcement()` — i.e. audit-only, no rules — and a malformed or
-unreadable `roe.json` logs a warning and degrades the same way.
+If `workspace_path` is unset, or the RoE file or `machine_enforcement`
+block is genuinely absent, the legacy audit-only default still applies.
+An unreadable, malformed or invalid explicit policy instead produces an
+audited `INVALID_ROE` refusal before any gated handler runs. Non-gated
+repair tools remain available. Repairing the file restores normal behavior
+on the next call; failed loads are not cached as successfully provisioned.
 
 ## Worked example — enforce mode
 

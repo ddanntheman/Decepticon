@@ -41,6 +41,7 @@ Reading the RoE:
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -164,10 +165,56 @@ def _load_rules_for_workspace(workspace_path: str | None) -> MachineEnforcement:
     mode = str(block.get("mode", EnforcementMode.AUDIT.value)).lower()
     if mode not in {member.value for member in EnforcementMode}:
         raise InvalidRoEError("RoE enforcement mode must be audit, warn or enforce")
+    for field in (
+        "in_scope",
+        "out_of_scope",
+        "forbidden_destinations",
+        "forbidden_command_patterns",
+        "authorized_windows",
+        "blackout_windows",
+    ):
+        if not isinstance(block.get(field, []), list):
+            raise InvalidRoEError(f"RoE {field} must be a JSON array")
+    for field in ("allow_cloud_metadata", "allow_sensitive_tlds"):
+        if field in block and not isinstance(block[field], bool):
+            raise InvalidRoEError(f"RoE {field} must be a boolean")
+    for field in ("max_concurrent_connections", "min_inter_request_delay_ms"):
+        value = block.get(field, 0)
+        if field == "max_concurrent_connections" and value is None:
+            continue
+        if type(value) is not int or value < 0:
+            raise InvalidRoEError(f"RoE {field} must be a nonnegative integer")
+    for field in ("in_scope", "out_of_scope"):
+        for entry in block.get(field, []):
+            target = entry.get("target") if isinstance(entry, dict) else entry
+            kind = entry.get("type", "auto") if isinstance(entry, dict) else "auto"
+            if not isinstance(target, str) or not target.strip():
+                raise InvalidRoEError(f"RoE {field} entries require a nonempty target string")
+            if kind not in ("auto", "host", "ip", "cidr", "domain-glob"):
+                raise InvalidRoEError(f"RoE {field} contains an unsupported target type")
+            try:
+                if kind == "cidr" or (kind == "auto" and "/" in target):
+                    ipaddress.ip_network(target, strict=False)
+                elif kind == "ip":
+                    ipaddress.ip_address(target.rstrip("."))
+            except ValueError as exc:
+                raise InvalidRoEError(f"RoE {field} contains an invalid network target") from exc
+    for field in ("forbidden_destinations", "forbidden_command_patterns"):
+        if any(not isinstance(entry, str) or not entry.strip() for entry in block.get(field, [])):
+            raise InvalidRoEError(f"RoE {field} entries must be nonempty strings")
     try:
-        return MachineEnforcement.from_dict(block)
-    except (TypeError, ValueError, OverflowError) as exc:
+        for pattern in block.get("forbidden_command_patterns", []):
+            re.compile(pattern)
+        rules = MachineEnforcement.from_dict(block)
+    except (TypeError, ValueError, OverflowError, re.error) as exc:
         raise InvalidRoEError("RoE machine_enforcement cannot be interpreted") from exc
+    for field in ("authorized_windows", "blackout_windows"):
+        windows = getattr(rules, field)
+        if len(windows) != len(block.get(field, [])):
+            raise InvalidRoEError(f"RoE {field} contains an invalid time window")
+        if any(start.tzinfo is None or end.tzinfo is None for start, end in windows):
+            raise InvalidRoEError(f"RoE {field} timestamps must include a timezone")
+    return rules
 
 
 def _abort_marker_present(workspace_path: str | None) -> bool:

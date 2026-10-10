@@ -1166,6 +1166,70 @@ class TestInvalidRoE:
             _load_rules_for_workspace(str(tmp_path))
 
 
+@pytest.mark.parametrize("use_async", [False, True], ids=["sync", "async"])
+@pytest.mark.parametrize(
+    "restriction",
+    [
+        {"in_scope": [None]},
+        {"in_scope": [{"target": ""}]},
+        {"in_scope": [{"target": 123}]},
+        {"in_scope": "internal.example"},
+        {"in_scope": None},
+        {"out_of_scope": [{}]},
+        {"out_of_scope": [{"target": "invalid", "type": "cidr"}]},
+        {"authorized_windows": [{"start": "invalid", "end": "invalid"}]},
+        {"authorized_windows": "invalid"},
+        {"blackout_windows": [{}]},
+        {"blackout_windows": [["2026-01-02T00:00:00+00:00", "2026-01-01T00:00:00+00:00"]]},
+        {"authorized_windows": [["2026-01-01T00:00:00", "2027-01-01T00:00:00"]]},
+        {"forbidden_command_patterns": ["["]},
+        {"forbidden_command_patterns": "printf"},
+        {"forbidden_destinations": [None]},
+        {"allow_cloud_metadata": "false"},
+        {"allow_sensitive_tlds": "false"},
+        {"min_inter_request_delay_ms": -1},
+        {"min_inter_request_delay_ms": 1.5},
+        {"max_concurrent_connections": "2"},
+    ],
+    ids=[
+        "null-scope-entry",
+        "empty-scope-target",
+        "numeric-scope-target",
+        "scope-string",
+        "null-scope",
+        "empty-deny-entry",
+        "invalid-cidr",
+        "invalid-window",
+        "window-string",
+        "empty-blackout",
+        "reversed-blackout",
+        "naive-window",
+        "invalid-regex",
+        "regex-string",
+        "null-destination",
+        "metadata-string",
+        "sensitive-tld-string",
+        "negative-delay",
+        "fractional-delay",
+        "string-concurrency",
+    ],
+)
+def test_invalid_restriction_is_refused_instead_of_discarded(
+    tmp_path: Path, restriction: dict, use_async: bool
+) -> None:
+    _write_roe(tmp_path, {"mode": "enforce", **restriction})
+    mw = RoEGuardrailMiddleware()
+    req = _make_request("bash", "printf harmless", state={"workspace_path": str(tmp_path)})
+    handler = AsyncMock() if use_async else MagicMock()
+    result = (
+        asyncio.run(mw.awrap_tool_call(req, handler))
+        if use_async
+        else mw.wrap_tool_call(req, handler)
+    )
+    handler.assert_not_called()
+    assert "INVALID_ROE" in result.content
+
+
 class TestToTextFlattening:
     def test_list_of_str_flattened_in_warn(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})
