@@ -567,7 +567,7 @@ class RoEGuardrailMiddleware(AgentMiddleware):
             "tool": tool_name,
             "decision": "refuse",
             "reason_code": "EMERGENCY_ABORT",
-            "command_excerpt": _command_from_tool_call(request)[:512],
+            "command_excerpt": _redact_secrets(_command_from_tool_call(request))[:512],
         }
         try:
             self._sink.append(record)
