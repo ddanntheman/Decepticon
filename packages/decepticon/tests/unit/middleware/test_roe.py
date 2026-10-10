@@ -1190,6 +1190,10 @@ class TestInvalidRoE:
         {"min_inter_request_delay_ms": -1},
         {"min_inter_request_delay_ms": 1.5},
         {"max_concurrent_connections": "2"},
+        {"forbidden_destinations": ["10.0.0.0/33"]},
+        {"forbidden_destinations": ["999.1.1.1/24"]},
+        {"min_inter_request_delay_ms": 10**309},
+        {"min_inter_request_delay_ms": 3_600_001},
     ],
     ids=[
         "null-scope-entry",
@@ -1212,6 +1216,10 @@ class TestInvalidRoE:
         "negative-delay",
         "fractional-delay",
         "string-concurrency",
+        "invalid-destination-cidr",
+        "invalid-destination-address",
+        "overflowing-delay",
+        "excessive-delay",
     ],
 )
 def test_invalid_restriction_is_refused_instead_of_discarded(
@@ -1228,6 +1236,14 @@ def test_invalid_restriction_is_refused_instead_of_discarded(
     )
     handler.assert_not_called()
     assert "INVALID_ROE" in result.content
+
+
+def test_first_gated_call_never_waits_on_fresh_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("decepticon.middleware.roe.time.monotonic", lambda: 1.0)
+    mw = RoEGuardrailMiddleware(jitter_frac=0.0)
+    rules = MachineEnforcement.from_dict({"mode": "enforce", "min_inter_request_delay_ms": 30_000})
+    assert mw._pace_wait_seconds(rules) == 0.0
+    assert mw._pace_wait_seconds(rules) == pytest.approx(30.0)
 
 
 class TestToTextFlattening:
