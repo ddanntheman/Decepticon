@@ -212,7 +212,7 @@ class Decision:
         )
 
 
-def matches_domain_glob(pattern: str, candidate: str) -> bool:
+def _glob_match(pattern: str, candidate: str) -> bool:
     """Match a DNS glob without crossing label boundaries.
 
     ``*`` matches one or more characters within one label; ``?`` matches
@@ -221,10 +221,6 @@ def matches_domain_glob(pattern: str, candidate: str) -> bool:
     """
     regex = re.escape(pattern).replace(r"\*", "[^.]+").replace(r"\?", "[^.]")
     return re.fullmatch(regex, candidate, re.IGNORECASE) is not None
-
-
-def _glob_match(pattern: str, candidate: str) -> bool:
-    return matches_domain_glob(pattern, candidate)
 
 
 def _matches_rule(rule: ScopeRule, target: str) -> bool:
