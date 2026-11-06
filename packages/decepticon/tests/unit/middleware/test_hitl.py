@@ -157,6 +157,99 @@ def test_filebacked_transport_returns_none_on_timeout(tmp_path: Path):
     assert transport.wait_for_decision("r4", timeout=0.2) is None
 
 
+def _file_request(request_id: str, timeout: float = 300.0) -> ApprovalRequest:
+    return ApprovalRequest(
+        request_id=request_id,
+        engagement_name="fixture",
+        agent_name="fixture",
+        tool_name="bash",
+        tool_args_redacted={},
+        matched_rule=ApprovalPolicyRule(tool_pattern="bash", timeout_seconds=timeout),
+        reason="approval retention",
+        created_at=time.time(),
+    )
+
+
+@pytest.mark.parametrize("decision_order", [("first", "second"), ("second", "first")])
+@pytest.mark.parametrize("awaited_id", ["first", "second"])
+def test_filebacked_decisions_survive_waiting_for_another_request(
+    tmp_path: Path, decision_order: tuple[str, str], awaited_id: str
+) -> None:
+    decisions = tmp_path / "decisions.jsonl"
+    transport = FileBackedApprovalTransport(
+        tmp_path / "requests.jsonl", decisions, poll_interval=0.001
+    )
+    actions = {"first": "allow", "second": "deny"}
+    for request_id in actions:
+        transport.submit(_file_request(request_id))
+    decisions.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "kind": "approval_decision",
+                    "request_id": request_id,
+                    "action": actions[request_id],
+                }
+            )
+            + "\n"
+            for request_id in decision_order
+        ),
+        encoding="utf-8",
+    )
+    preceding_id = "second" if awaited_id == "first" else "first"
+    transport.wait_for_decision(preceding_id, timeout=0.1)
+    decision = transport.wait_for_decision(awaited_id, timeout=0.1)
+    assert (
+        decision is not None
+        and decision.request_id == awaited_id
+        and decision.action == actions[awaited_id]
+    )
+
+
+def test_filebacked_timeout_preserves_a_different_requests_decision(tmp_path: Path) -> None:
+    decisions = tmp_path / "decisions.jsonl"
+    transport = FileBackedApprovalTransport(
+        tmp_path / "requests.jsonl", decisions, poll_interval=0.001
+    )
+    transport.submit(_file_request("unanswered"))
+    transport.submit(_file_request("pending"))
+    decisions.write_text(
+        json.dumps({"kind": "approval_decision", "request_id": "pending", "action": "deny"}) + "\n",
+        encoding="utf-8",
+    )
+    transport.wait_for_decision("unanswered", timeout=0.02)
+    pending = transport.wait_for_decision("pending", timeout=0.1)
+    assert pending is not None and pending.request_id == "pending" and pending.action == "deny"
+
+
+@pytest.mark.parametrize("obsolete_state", ["historical", "timed-out", "expired", "cached-timeout"])
+def test_filebacked_obsolete_decisions_are_not_buffered(
+    tmp_path: Path, obsolete_state: str
+) -> None:
+    decisions = tmp_path / "decisions.jsonl"
+    transport = FileBackedApprovalTransport(
+        tmp_path / "requests.jsonl", decisions, poll_interval=0.001
+    )
+    if obsolete_state != "historical":
+        transport.submit(
+            _file_request("obsolete", timeout=0.0 if obsolete_state == "expired" else 300.0)
+        )
+    if obsolete_state == "timed-out":
+        transport.wait_for_decision("obsolete", timeout=0.0)
+    transport.submit(_file_request("live"))
+    decisions.write_text(
+        "".join(
+            json.dumps({"kind": "approval_decision", "request_id": rid, "action": "allow"}) + "\n"
+            for rid in ("obsolete", "live")
+        ),
+        encoding="utf-8",
+    )
+    transport.wait_for_decision("live", timeout=0.1)
+    if obsolete_state == "cached-timeout":
+        transport.wait_for_decision("obsolete", timeout=0.0)
+    assert transport._pending_decisions == {}
+
+
 def test_middleware_passes_through_unmatched_tools():
     t = InProcessApprovalTransport()
     mw = HITLApprovalMiddleware(

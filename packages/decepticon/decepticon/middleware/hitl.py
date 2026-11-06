@@ -63,6 +63,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -184,10 +185,9 @@ class FileBackedApprovalTransport:
     files are append-only; consumers (operator UI, web dashboard) tail
     ``requests_path`` and append to ``decisions_path``.
 
-    Decisions are matched by ``request_id`` so multiple approvals can be
-    in flight concurrently without ordering coupling. Once a decision is
-    consumed the transport records the byte offset so a subsequent call
-    starts reading from the next line.
+    Decisions are retained only for submitted, unexpired request IDs.
+    Other pending requests survive polling; consumed and timed-out IDs
+    cannot be replayed. The byte offset advances after every scanned line.
     """
 
     def __init__(
@@ -203,11 +203,23 @@ class FileBackedApprovalTransport:
         self._decisions_path.parent.mkdir(parents=True, exist_ok=True)
         self._poll_interval = poll_interval
         self._decisions_offset = 0
-        self._consumed_ids: set[str] = set()
+        self._pending_decisions: dict[str, ApprovalDecision] = {}
+        self._request_deadlines: dict[str, float] = {}
+        self._lock = threading.Lock()
 
     def submit(self, request: ApprovalRequest) -> None:
-        with self._requests_path.open("a", encoding="utf-8") as fh:
-            fh.write(request.to_jsonl() + "\n")
+        with self._lock:
+            now = time.monotonic()
+            self._expire_requests(now)
+            with self._requests_path.open("a", encoding="utf-8") as fh:
+                fh.write(request.to_jsonl() + "\n")
+            self._request_deadlines[request.request_id] = now + request.matched_rule.timeout_seconds
+
+    def _expire_requests(self, now: float) -> None:
+        for request_id in tuple(self._request_deadlines):
+            if self._request_deadlines[request_id] <= now:
+                del self._request_deadlines[request_id]
+                self._pending_decisions.pop(request_id, None)
 
     def _scan_decisions(self) -> list[ApprovalDecision]:
         if not self._decisions_path.exists():
@@ -231,7 +243,7 @@ class FileBackedApprovalTransport:
                 if obj.get("kind") != "approval_decision":
                     continue
                 rid = obj.get("request_id")
-                if not rid or rid in self._consumed_ids:
+                if not rid or rid not in self._request_deadlines:
                     continue
                 out.append(
                     ApprovalDecision(
@@ -246,12 +258,27 @@ class FileBackedApprovalTransport:
 
     def wait_for_decision(self, request_id: str, timeout: float) -> ApprovalDecision | None:
         deadline = time.monotonic() + timeout
+        with self._lock:
+            registered_deadline = self._request_deadlines.get(request_id)
+            if registered_deadline is None:
+                return None
+            self._request_deadlines[request_id] = min(registered_deadline, deadline)
         while time.monotonic() < deadline:
-            for decision in self._scan_decisions():
-                if decision.request_id == request_id:
-                    self._consumed_ids.add(request_id)
+            with self._lock:
+                self._expire_requests(time.monotonic())
+                if request_id not in self._request_deadlines:
+                    return None
+                for decision in self._scan_decisions():
+                    self._pending_decisions.setdefault(decision.request_id, decision)
+                self._expire_requests(time.monotonic())
+                decision = self._pending_decisions.pop(request_id, None)
+                if decision is not None:
+                    del self._request_deadlines[request_id]
                     return decision
             time.sleep(self._poll_interval)
+        with self._lock:
+            self._request_deadlines.pop(request_id, None)
+            self._pending_decisions.pop(request_id, None)
         return None
 
 
