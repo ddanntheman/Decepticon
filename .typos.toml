@@ -38,6 +38,8 @@ extend-ignore-re = [
 ]
 
 [default.extend-words]
+"oif" = "oif"
+"abck" = "abck"
 # Offensive-security tool names that look like typos
 "hcxdumptool" = "hcxdumptool"
 "hcxpcapngtool" = "hcxpcapngtool"
