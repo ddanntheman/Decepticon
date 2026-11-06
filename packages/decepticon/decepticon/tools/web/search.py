@@ -68,9 +68,11 @@ def _extract_json(output: str) -> dict[str, Any] | None:
     return None
 
 
-async def _dispatch(cmd: str, *, timeout: int) -> tuple[dict[str, Any] | None, str]:
+async def _dispatch(
+    cmd: str, *, timeout: int, config: RunnableConfig
+) -> tuple[dict[str, Any] | None, str]:
     """Run an engine command in the sandbox. Returns (parsed_json, raw_output)."""
-    sandbox = get_sandbox()
+    sandbox = get_sandbox(config)
     if sandbox is None:
         return None, "[ERROR] no sandbox available"
     try:
@@ -87,9 +89,9 @@ def _truncate(text: str, limit: int = 12_000) -> str:
 @tool
 async def web_fetch(
     url: str,
+    config: RunnableConfig,
     selector: str = "",
     device: str = "auto",
-    config: RunnableConfig | None = None,
 ) -> str:
     """Fetch a URL's content, escalating past WAF/anti-bot defenses if needed.
 
@@ -111,7 +113,7 @@ async def web_fetch(
         parts += ["--selector", shlex.quote(selector)]
     if device in ("desktop", "mobile"):
         parts += ["--device", device]
-    data, raw = await _dispatch(" ".join(parts), timeout=_FETCH_TIMEOUT)
+    data, raw = await _dispatch(" ".join(parts), timeout=_FETCH_TIMEOUT, config=config)
     if data is None:
         return raw or "[ERROR] web_fetch: no parseable result from engine"
 
@@ -161,8 +163,8 @@ async def web_fetch(
 @tool
 async def web_search(
     query: str,
+    config: RunnableConfig,
     provider: str = "duckduckgo",
-    config: RunnableConfig | None = None,
 ) -> str:
     """Keyword web search via an allowlisted provider (OSINT).
 
@@ -184,7 +186,7 @@ async def web_search(
         "--workspace",
         shlex.quote(workspace),
     ]
-    data, raw = await _dispatch(" ".join(parts), timeout=_SEARCH_TIMEOUT)
+    data, raw = await _dispatch(" ".join(parts), timeout=_SEARCH_TIMEOUT, config=config)
     if data is None:
         return raw or "[ERROR] web_search: no parseable result from engine"
     if data.get("error"):

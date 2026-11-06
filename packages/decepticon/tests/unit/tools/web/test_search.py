@@ -38,7 +38,7 @@ class _FakeSandbox:
 
 def _patch_sandbox(monkeypatch: pytest.MonkeyPatch, output: str) -> _FakeSandbox:
     fake = _FakeSandbox(output)
-    monkeypatch.setattr(search, "get_sandbox", lambda: fake)
+    monkeypatch.setattr(search, "get_sandbox", lambda _config=None: fake)
     monkeypatch.setattr(search, "_workspace_path_from_config", lambda _c: "/workspace/eng1")
     return fake
 
@@ -110,7 +110,7 @@ async def test_web_fetch_scope_refusal_is_not_reported_as_login(
 
 
 async def test_web_fetch_no_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(search, "get_sandbox", lambda: None)
+    monkeypatch.setattr(search, "get_sandbox", lambda _config=None: None)
     monkeypatch.setattr(search, "_workspace_path_from_config", lambda _c: "/workspace/eng1")
     out = await search.web_fetch.ainvoke({"url": "https://x.test/a"})
     assert "no sandbox" in out
