@@ -218,26 +218,31 @@ def sandbox_http(
         worker.join(timeout=5)
 
 
-@pytest.mark.parametrize("forged_config", [False, True])
-@pytest.mark.parametrize(
-    ("web_tool", "arguments", "engine_args"),
-    [
-        (search.web_fetch, {"url": "https://outside.test/"}, ["fetch", "https://outside.test/"]),
-        (
-            search.web_search,
-            {"query": "scope fixture"},
-            ["search", "scope fixture", "--provider", "duckduckgo"],
-        ),
+@pytest.fixture(
+    params=[
+        (web_tool, arguments, engine_args, forged_config)
+        for web_tool, arguments, engine_args in [
+            (
+                search.web_fetch,
+                {"url": "https://outside.test/"},
+                ["fetch", "https://outside.test/"],
+            ),
+            (
+                search.web_search,
+                {"query": "scope fixture"},
+                ["search", "scope fixture", "--provider", "duckduckgo"],
+            ),
+        ]
+        for forged_config in (False, True)
     ],
+    ids=["fetch-trusted", "fetch-forged", "search-trusted", "search-forged"],
 )
-async def test_native_invocation_uses_selected_sandbox_and_workspace(
+async def native_requests(
+    request: pytest.FixtureRequest,
     sandbox_http: tuple[str, list[tuple[str, str | None, list[str]]]],
-    web_tool: StructuredTool,
-    arguments: dict[str, str],
-    engine_args: list[str],
-    forged_config: bool,
-) -> None:
+) -> tuple[list[tuple[str, str | None, list[str]]], list[str]]:
     url, calls = sandbox_http
+    web_tool, arguments, engine_args, forged_config = request.param
     invocation_args: dict[str, object] = dict(arguments)
     if forged_config:
         invocation_args["config"] = {"configurable": {"workspace_path": "/workspace/foreign"}}
@@ -251,17 +256,31 @@ async def test_native_invocation_uses_selected_sandbox_and_workspace(
             }
         },
     )
-    assert calls == [
-        (
-            "/selected/execute",
-            "Bearer fixture-token",
-            [
-                "python3",
-                "-m",
-                "decepticon.sandbox_web",
-                *engine_args,
-                "--workspace",
-                "/workspace/selected-engagement",
-            ],
-        )
+    expected_command = [
+        "python3",
+        "-m",
+        "decepticon.sandbox_web",
+        *engine_args,
+        "--workspace",
+        "/workspace/selected-engagement",
     ]
+    return calls, expected_command
+
+
+def test_native_invocation_uses_selected_endpoint(
+    native_requests: tuple[list[tuple[str, str | None, list[str]]], list[str]],
+) -> None:
+    assert [call[0] for call in native_requests[0]] == ["/selected/execute"]
+
+
+def test_native_invocation_uses_selected_token(
+    native_requests: tuple[list[tuple[str, str | None, list[str]]], list[str]],
+) -> None:
+    assert [call[1] for call in native_requests[0]] == ["Bearer fixture-token"]
+
+
+def test_native_invocation_uses_selected_workspace(
+    native_requests: tuple[list[tuple[str, str | None, list[str]]], list[str]],
+) -> None:
+    calls, expected_command = native_requests
+    assert [call[2] for call in calls] == [expected_command]
