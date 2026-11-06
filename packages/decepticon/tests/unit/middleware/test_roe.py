@@ -1648,3 +1648,51 @@ class TestRoEThrottle:
         mw.wrap_tool_call(req, handler)
         mw.wrap_tool_call(req, handler)
         assert slept == []
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "https://example.test/",
+        {"target": "http://example.test/", "type": "auto"},
+        {"target": "https://example.test:443/", "type": "auto"},
+        {"target": "https://example.test/", "type": "host"},
+    ],
+)
+def test_workspace_root_url_scope(entry: str | dict[str, str], tmp_path: Path) -> None:
+    _write_roe(tmp_path, {"mode": "enforce", "in_scope": [entry]})
+    rules = _load_rules_for_workspace(str(tmp_path))
+    assert evaluate_target("example.test", rules).allow
+    assert not evaluate_target("example.test.evil.test", rules).allow
+    assert not evaluate_target("api.example.test", rules).allow
+
+
+def test_workspace_url_exclusion_denies_host(tmp_path: Path) -> None:
+    _write_roe(
+        tmp_path,
+        {
+            "mode": "enforce",
+            "in_scope": ["example.test"],
+            "out_of_scope": ["https://example.test/private"],
+        },
+    )
+    rules = _load_rules_for_workspace(str(tmp_path))
+    assert evaluate_target("example.test", rules).reason_code == "OUT_OF_SCOPE"
+
+
+@pytest.mark.parametrize(
+    ("field", "entry"),
+    [
+        ("in_scope", {"target": "https://example.test/private", "type": "host"}),
+        ("in_scope", {"target": "https://example.test:8443/", "type": "host"}),
+        ("in_scope", {"target": "https://user@example.test/", "type": "host"}),
+        ("in_scope", {"target": "https://example.test/?x=1", "type": "host"}),
+        ("in_scope", {"target": "https://example.test/#fragment", "type": "host"}),
+        ("in_scope", {"target": "https:///", "type": "host"}),
+        ("forbidden_destinations", "https://example.test/"),
+    ],
+)
+def test_workspace_unsupported_urls_fail_closed(field: str, entry: object, tmp_path: Path) -> None:
+    _write_roe(tmp_path, {"mode": "enforce", field: [entry]})
+    with pytest.raises(roe_mod.InvalidRoEError):
+        _load_rules_for_workspace(str(tmp_path))
