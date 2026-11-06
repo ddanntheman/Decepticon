@@ -32,7 +32,6 @@ _FAKE_HTTP_CLIENT.async_client = lambda *_a, **_kw: None
 
 sys.modules.setdefault("litellm", _FAKE_LITELLM)
 sys.modules.setdefault("oauth_token_store", _FAKE_OAUTH)
-sys.modules.setdefault("httpx", types.ModuleType("httpx"))
 sys.modules.setdefault("http_client", _FAKE_HTTP_CLIENT)
 
 _module = importlib.util.module_from_spec(_spec)

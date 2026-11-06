@@ -74,7 +74,6 @@ def _install(name: str, stub: types.ModuleType) -> None:
 
 _install("litellm", _FAKE_LITELLM)
 _install("oauth_token_store", _FAKE_OAUTH)
-_install("httpx", types.ModuleType("httpx"))
 _install("http_client", _FAKE_HTTP_CLIENT)
 
 _module = importlib.util.module_from_spec(_spec)
