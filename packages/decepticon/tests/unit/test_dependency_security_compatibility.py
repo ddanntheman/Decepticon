@@ -1,11 +1,13 @@
 """Exercise security-sensitive dependency paths without credentials or network."""
 
 import sys
+from importlib.metadata import version
 
 import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from langgraph_cli.exec import subp_exec
+from packaging.version import Version
 from pyasn1.codec.der import decoder, encoder
 from pyasn1_modules import rfc5208
 
@@ -49,3 +51,17 @@ def test_asn1_decodes_and_round_trips_pkcs8():
     payload = b"dependency-compatibility-fixture"
     signature = restored.sign(payload, padding.PKCS1v15(), hashes.SHA256())
     key.public_key().verify(signature, payload, padding.PKCS1v15(), hashes.SHA256())
+
+
+@pytest.mark.parametrize(
+    ("package", "minimum"),
+    [
+        ("langgraph-api", "0.15.0"),
+        ("langgraph-cli", "0.4.37"),
+        ("pyasn1", "0.6.5"),
+        ("certifi", "2026.10.19"),
+        ("langchain", "1.4.7"),
+    ],
+)
+def test_security_dependency_floor(package: str, minimum: str) -> None:
+    assert Version(version(package)) >= Version(minimum)
