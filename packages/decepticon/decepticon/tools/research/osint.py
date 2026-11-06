@@ -44,6 +44,7 @@ import httpx
 from langchain_core.tools import tool
 
 from decepticon.tools.research._state import _json
+from decepticon_core.types.roe import _glob_match
 from decepticon_core.utils.logging import get_logger
 
 log = get_logger("research.osint")
@@ -85,10 +86,7 @@ def _load_scope_patterns() -> list[str]:
 
 def _matches_pattern(target: str, pattern: str) -> bool:
     """Match ``target`` against a single host / ``*.wildcard`` pattern."""
-    if pattern.startswith("*."):
-        suffix = pattern[1:]  # ".example.com"
-        return target.endswith(suffix) or target == pattern[2:]
-    return target == pattern
+    return _glob_match(pattern, target)
 
 
 def _is_in_scope(target: str, patterns: list[str]) -> bool:

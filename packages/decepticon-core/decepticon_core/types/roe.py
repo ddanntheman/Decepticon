@@ -46,6 +46,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Iterable
+from urllib.parse import urlsplit
 
 MAX_INTER_REQUEST_DELAY_MS = 3_600_000
 
@@ -213,14 +214,21 @@ class Decision:
 
 
 def _glob_match(pattern: str, candidate: str) -> bool:
-    if pattern.startswith("*.") and pattern.count("*") == 1 and "?" not in pattern:
-        return candidate.lower().endswith(pattern[1:].lower())
-    regex = "^" + re.escape(pattern).replace(r"\*", "[^.]+").replace(r"\?", ".") + "$"
-    return re.match(regex, candidate, re.IGNORECASE) is not None
+    """Match a DNS glob without crossing label boundaries.
+
+    ``*`` matches one or more characters within one label; ``?`` matches
+    exactly one non-dot character. A wildcard grants neither its apex nor
+    deeper descendants. Additional hosts require their own scope rules.
+    """
+    regex = re.escape(pattern).replace(r"\*", "[^.]+").replace(r"\?", "[^.]")
+    return re.fullmatch(regex, candidate, re.IGNORECASE) is not None
 
 
-def _matches_rule(rule: ScopeRule, target: str) -> bool:
-    kind = rule.resolved_kind()
+def _matches_rule(rule: ScopeRule, target: str, *, deny: bool = False) -> bool:
+    pattern = _network_scope_pattern(rule, deny=deny)
+    if pattern is None:
+        return False
+    kind = rule.resolved_kind() if pattern == rule.pattern else "host"
     # A trailing dot is DNS-equivalent ("host." resolves identically to
     # "host"), so strip it on BOTH the rule pattern and the target before
     # matching. Without this, the FQDN form (``metadata.google.internal.`` or
@@ -231,13 +239,36 @@ def _matches_rule(rule: ScopeRule, target: str) -> bool:
     norm_target = target.rstrip(".")
     if kind == "cidr":
         try:
-            network = ipaddress.ip_network(rule.pattern, strict=False)
+            network = ipaddress.ip_network(pattern, strict=False)
             return ipaddress.ip_address(norm_target) in network
         except ValueError:
             return False
     if kind == "domain-glob":
-        return _glob_match(rule.pattern.rstrip("."), norm_target)
-    return rule.pattern.rstrip(".").lower() == norm_target.lower()
+        return _glob_match(pattern.rstrip("."), norm_target)
+    return pattern.rstrip(".").lower() == norm_target.lower()
+
+
+def _network_scope_pattern(rule: ScopeRule, *, deny: bool = False) -> str | None:
+    pattern = rule.pattern
+    if pattern.lower().startswith(("http://", "https://")):
+        try:
+            parsed = urlsplit(pattern)
+            default_port = 443 if parsed.scheme.lower() == "https" else 80
+            if (
+                rule.kind not in ("auto", "host")
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or (not deny and parsed.path not in ("", "/"))
+                or (not deny and parsed.query)
+                or (not deny and parsed.fragment)
+                or (not deny and parsed.port not in (None, default_port))
+            ):
+                return None
+        except ValueError:
+            return None
+        pattern = parsed.hostname
+    return pattern
 
 
 def _sensitive_tld_match(target: str, tlds: tuple[str, ...]) -> str | None:
@@ -290,7 +321,7 @@ def evaluate_target(
             )
 
     for rule in rules.out_of_scope:
-        if _matches_rule(rule, target):
+        if _matches_rule(rule, target, deny=True):
             return Decision.refuse(
                 code="OUT_OF_SCOPE",
                 detail=f"{target!r} matches out-of-scope entry {rule.pattern!r}",

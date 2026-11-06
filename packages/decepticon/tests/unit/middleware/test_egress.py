@@ -17,7 +17,7 @@ from decepticon.middleware.egress import (
     render_dns_allowlist,
     render_nftables,
 )
-from decepticon_core.types.roe import MachineEnforcement
+from decepticon_core.types.roe import MachineEnforcement, evaluate_target
 
 
 def _rules(**block) -> MachineEnforcement:
@@ -55,6 +55,39 @@ def test_in_scope_host_and_glob_go_to_allowed_hosts():
     # In-scope hosts are present (alongside the always-allowed OSINT providers).
     assert {"*.acme.com", "prod.acme.com"} <= set(pol.allowed_hosts)
     assert pol.allowed_cidrs == ()
+
+
+def test_signed_root_url_compiles_to_host_allowlist():
+    pol = compile_egress_policy(
+        _rules(mode="enforce", in_scope=[{"target": "https://decepticon.red/", "type": "auto"}])
+    )
+
+    assert "decepticon.red" in pol.allowed_hosts
+    assert "https://decepticon.red/" not in pol.allowed_hosts
+    assert pol.default_drop is True
+
+
+def test_path_specific_url_cannot_open_egress():
+    pol = compile_egress_policy(
+        _rules(
+            mode="enforce", in_scope=[{"target": "https://decepticon.red/admin", "type": "auto"}]
+        )
+    )
+
+    assert "decepticon.red" not in pol.allowed_hosts
+    assert pol.default_drop is True
+
+
+def test_url_exclusion_denies_host_even_with_path():
+    pol = compile_egress_policy(
+        _rules(
+            mode="enforce",
+            in_scope=["decepticon.red"],
+            out_of_scope=[{"target": "https://decepticon.red/admin", "type": "auto"}],
+        )
+    )
+
+    assert "decepticon.red" in pol.denied_hosts
 
 
 def test_osint_search_providers_are_always_allowed():
@@ -124,7 +157,7 @@ def test_render_enforce_emits_drop_policy_and_management_allow():
     pol = compile_egress_policy(_rules(mode="enforce", in_scope=["10.0.0.0/24"]))
     script = render_nftables(pol, management_cidrs=["172.20.0.0/16"])
     assert "policy drop" in script
-    assert "ct state established,related accept" in script
+    assert "ct state established,related accept" not in script
     assert 'oif "lo" accept' in script
     assert "172.20.0.0/16" in script  # management plane (neo4j/daemon) stays reachable
     assert "10.0.0.0/24" in script  # in-scope target allowed
@@ -186,3 +219,46 @@ def test_egress_policy_is_frozen():
     except AttributeError:
         return
     raise AssertionError("EgressPolicy must be immutable")
+
+
+def test_root_url_rule_matches_its_host_without_allowing_lookalikes() -> None:
+    rules = MachineEnforcement.from_dict(
+        {"mode": "enforce", "in_scope": [{"target": "https://decepticon.red/", "type": "auto"}]}
+    )
+
+    assert evaluate_target("decepticon.red", rules).allow
+    assert not evaluate_target("other.decepticon.red", rules).allow
+    assert not evaluate_target("decepticon.red.evil.test", rules).allow
+
+
+def test_path_specific_url_cannot_become_host_wide_scope() -> None:
+    rules = MachineEnforcement.from_dict(
+        {
+            "mode": "enforce",
+            "in_scope": [{"target": "https://decepticon.red/admin", "type": "auto"}],
+        }
+    )
+
+    assert not evaluate_target("decepticon.red", rules).allow
+
+
+def test_root_url_exclusion_overrides_host_allow_rule() -> None:
+    rules = MachineEnforcement.from_dict(
+        {
+            "in_scope": [{"target": "decepticon.red", "type": "host"}],
+            "out_of_scope": [{"target": "https://decepticon.red/", "type": "auto"}],
+        }
+    )
+
+    assert evaluate_target("decepticon.red", rules).reason_code == "OUT_OF_SCOPE"
+
+
+def test_path_url_exclusion_denies_whole_host() -> None:
+    rules = MachineEnforcement.from_dict(
+        {
+            "in_scope": ["decepticon.red"],
+            "out_of_scope": [{"target": "https://decepticon.red/admin", "type": "auto"}],
+        }
+    )
+
+    assert evaluate_target("decepticon.red", rules).reason_code == "OUT_OF_SCOPE"

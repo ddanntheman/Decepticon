@@ -68,6 +68,8 @@ from decepticon_core.types.roe import (
     Decision,
     EnforcementMode,
     MachineEnforcement,
+    ScopeRule,
+    _network_scope_pattern,
     evaluate_command,
     evaluate_target,
     evaluate_time_window,
@@ -154,6 +156,14 @@ def _validate_target_entry(field: str, entry: Any) -> None:
         raise InvalidRoEError(f"RoE {field} entries require a nonempty target string")
     if kind not in ("auto", "host", "ip", "cidr", "domain-glob"):
         raise InvalidRoEError(f"RoE {field} contains an unsupported target type")
+    if target.strip().lower().startswith(("http://", "https://")):
+        rule = ScopeRule(pattern=target.strip(), kind=kind)
+        if (
+            field == "forbidden_destinations"
+            or _network_scope_pattern(rule, deny=field == "out_of_scope") is None
+        ):
+            raise InvalidRoEError(f"RoE {field} contains an unsupported URL target")
+        return
     try:
         if kind == "cidr" or (kind == "auto" and "/" in target):
             ipaddress.ip_network(target, strict=False)
