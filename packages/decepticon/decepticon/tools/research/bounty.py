@@ -25,6 +25,7 @@ from decepticon_core.types.kg import (
     Node,
     NodeKind,
 )
+from decepticon_core.types.roe import _glob_match
 from decepticon_core.utils.logging import get_logger
 
 log = get_logger("research.bounty")
@@ -128,8 +129,7 @@ def bounty_scope_check(
         for pattern in domains:
             pattern = pattern.lower().strip()
             if pattern.startswith("*."):
-                suffix = pattern[1:]  # e.g. ".example.com"
-                if target_lower.endswith(suffix) or target_lower == pattern[2:]:
+                if _glob_match(pattern, target_lower):
                     domain_match = True
                     break
             elif target_lower == pattern or target_lower.endswith("/" + pattern):

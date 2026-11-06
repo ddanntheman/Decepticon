@@ -213,10 +213,14 @@ class Decision:
 
 
 def _glob_match(pattern: str, candidate: str) -> bool:
-    if pattern.startswith("*.") and pattern.count("*") == 1 and "?" not in pattern:
-        return candidate.lower().endswith(pattern[1:].lower())
-    regex = "^" + re.escape(pattern).replace(r"\*", "[^.]+").replace(r"\?", ".") + "$"
-    return re.match(regex, candidate, re.IGNORECASE) is not None
+    """Match a DNS glob without crossing label boundaries.
+
+    ``*`` matches one or more characters within one label; ``?`` matches
+    exactly one non-dot character. A wildcard grants neither its apex nor
+    deeper descendants. Additional hosts require their own scope rules.
+    """
+    regex = re.escape(pattern).replace(r"\*", "[^.]+").replace(r"\?", "[^.]")
+    return re.fullmatch(regex, candidate, re.IGNORECASE) is not None
 
 
 def _matches_rule(rule: ScopeRule, target: str) -> bool:
