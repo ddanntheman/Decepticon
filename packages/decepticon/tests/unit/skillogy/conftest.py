@@ -5,7 +5,11 @@ from __future__ import annotations
 import math
 import re
 import socket
+import sys
 from collections.abc import Callable
+from dataclasses import dataclass
+from importlib import import_module
+from types import ModuleType
 from typing import Any, NoReturn, Self, cast
 
 import pytest
@@ -14,7 +18,29 @@ from decepticon.skillogy import embeddings
 from decepticon.skillogy.server.neo4j_backend import Neo4jBackend, assert_read_only
 
 
+@dataclass
+class DriverQuery:
+    text: str
+    timeout: float | None = None
+
+    def __str__(self) -> str:
+        return self.text
+
+
+@pytest.fixture(autouse=True)
+def neo4j_query_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    try:
+        module = import_module("neo4j")
+    except ImportError:
+        module = ModuleType("neo4j")
+        monkeypatch.setitem(sys.modules, "neo4j", module)
+    monkeypatch.setattr(module, "Query", DriverQuery, raising=False)
+
+
 class Records(list[dict[str, Any]]):
+    def fetch(self, count: int) -> list[dict[str, Any]]:
+        return self[:count]
+
     def single(self) -> dict[str, Any] | None:
         return self[0] if self else None
 
@@ -37,7 +63,10 @@ class SkillGraphDriver:
     def __exit__(self, *args: Any) -> None:
         return None
 
-    def run(self, cypher: str, parameters: dict[str, Any] | None = None, **kwargs: Any) -> Records:
+    def run(
+        self, cypher: str | DriverQuery, parameters: dict[str, Any] | None = None, **kwargs: Any
+    ) -> Records:
+        cypher = str(cypher)
         assert_read_only(cypher)
         params = parameters if parameters is not None else kwargs
         self.requests.append((cypher, params))
