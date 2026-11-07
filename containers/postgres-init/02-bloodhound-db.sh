@@ -26,6 +26,8 @@ BHCE_DB_NAME="${BHCE_POSTGRES_DB:-bloodhound}"
 BHCE_DB_USER="${BHCE_POSTGRES_USER:-bloodhound}"
 BHCE_DB_PASSWORD="${BHCE_POSTGRES_PASSWORD:-bhce-decepticon-local}"
 
+# POSTGRES_USER and POSTGRES_DB are exported by the postgres image entrypoint.
+# shellcheck disable=SC2154
 psql -v ON_ERROR_STOP=1 \
     --username "${POSTGRES_USER}" \
     --dbname "${POSTGRES_DB}" \
