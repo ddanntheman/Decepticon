@@ -344,4 +344,33 @@ describe("useAgent — engagement handoff lifecycle", () => {
     // After the handoff auto-submit fires, queuedMessage is cleared
     expect(result.current.queuedMessage).toBeNull();
   });
+  it.each([
+    [false, "workspace_identity", "/host/workspace/eng-abc"],
+    [true, "workspace_identity", "/host/workspace/eng-abc"],
+    [false, "engagement_name", "eng-abc"],
+    [true, "engagement_name", "eng-abc"],
+    [false, "workspace_path", "/tmp/ws"],
+    [true, "workspace_path", "/tmp/ws"],
+  ] as const)("binds %s handoff thread metadata %s", async (handoff, field, expected) => {
+    vi.stubEnv("DECEPTICON_ENGAGEMENT_WORKSPACE", "/host/workspace/eng-abc");
+    const firstStream = createControllableStream();
+    const client = mockState.client!;
+    (client.runs.stream as Mock)
+      .mockReturnValueOnce(firstStream)
+      .mockReturnValueOnce(createMockStream([noopValuesEvent]));
+    const hook = renderHook(() => useAgent());
+    act(() => hook.result.current.submit("start"));
+    await act(async () => { await vi.runAllTimersAsync(); });
+    if (handoff) {
+      act(() => hook.result.current.enqueue("continue"));
+      await act(async () => { await firstStream.emit(engagementReadyEvent); });
+    }
+    await act(async () => {
+      firstStream.end();
+      await vi.runAllTimersAsync();
+    });
+    const creation = (client.threads.create as Mock).mock.calls[handoff ? 1 : 0][0];
+    expect(creation?.metadata?.[field]).toBe(expected);
+  });
+
 });
