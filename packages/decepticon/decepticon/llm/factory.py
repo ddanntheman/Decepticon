@@ -122,6 +122,10 @@ def _resolve_max_tokens(model: str) -> int:
     return _model_max_output_tokens(model)
 
 
+class _LiteLLMDeploymentUnavailableError(RuntimeError):
+    """A router availability error, distinct from a provider quota failure."""
+
+
 class LLMTimeoutError(RuntimeError):
     """Raised when an async LLM request exceeds the configured per-call timeout.
 
@@ -1416,7 +1420,7 @@ def _classify_provider_error(exc: BaseException) -> ProviderErrorClass:
       1. Our own ``LLMTimeoutError`` and httpx transport errors → retryable.
       2. ``status_code`` attribute (openai.APIStatusError shape).
       3. ``response.status_code`` (httpx.HTTPStatusError shape).
-      4. Regex over ``str(exc)`` — LiteLLM nests upstream status in the body.
+      4. Regex over scrubbed error text — LiteLLM nests upstream status in the body.
 
     Default for unrecognised shapes is ``retryable`` so we preserve today's
     behavior (LiteLLM ``num_retries`` keeps spinning). Only flip to ``fatal``
@@ -1434,7 +1438,7 @@ def _classify_provider_error(exc: BaseException) -> ProviderErrorClass:
         if status in _RETRYABLE_STATUS:
             return "retryable"
 
-    match = _STATUS_IN_MSG.search(str(exc))
+    match = _STATUS_IN_MSG.search(_redact_secrets(str(exc)))
     if match is not None:
         code = int(match.group(1))
         if code in _FATAL_STATUS:
@@ -1447,14 +1451,15 @@ def _classify_provider_error(exc: BaseException) -> ProviderErrorClass:
 
 def _reraise_if_connection_error(exc: Exception) -> None:
     err_type = type(exc).__name__
+    safe_msg = _redact_secrets(str(exc))
     if any(
         kw in err_type.lower() for kw in ("connect", "timeout", "refused", "unreachable")
     ) or any(
-        kw in str(exc).lower()
+        kw in safe_msg.lower()
         for kw in ("connection refused", "connect error", "proxy", "unreachable")
     ):
         raise RuntimeError(
-            f"LLM proxy unreachable ({err_type}): {_redact_secrets(str(exc))}. "
+            f"LLM proxy unreachable ({err_type}): {safe_msg}. "
             f"Check 'decepticon logs litellm' for details."
         ) from exc
 
@@ -1474,22 +1479,20 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
       - 400 BadRequestError (e.g. deprecated param, model_group not found)
       - 401 AuthenticationError (key missing/invalid for the routed provider)
       - 404 NotFoundError (model not registered in litellm.yaml)
-      - 429 RateLimitError (provider quota hit)
+      - 429 RateLimitError (provider quota or router cooldown)
     """
     _reraise_if_connection_error(exc)
 
     err_type = type(exc).__name__
     msg = str(exc)
-    msg_lower = msg.lower()
     fatal_prefix = (
         "non-retryable provider error: " if _classify_provider_error(exc) == "fatal" else ""
     )
-    # Match on the raw text (status codes / keywords are not secret-shaped),
-    # but interpolate the scrubbed copy so an echoed credential never reaches
-    # the user-facing message — see _redact_secrets.
+    # Echoed credentials must not select a diagnostic or appear in its message.
     safe_msg = _redact_secrets(msg)
+    msg_lower = safe_msg.lower()
     status = _provider_status_code(exc)
-    status_match = _STATUS_IN_MSG.search(msg)
+    status_match = _STATUS_IN_MSG.search(safe_msg)
     is_bad_request = (
         "badrequest" in err_type.lower()
         or status == 400
@@ -1550,6 +1553,15 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
         ) from exc
 
     if "ratelimit" in err_type.lower() or "code: 429" in msg_lower:
+        if "no deployments available" in msg_lower or "cooldown" in msg_lower:
+            raise _LiteLLMDeploymentUnavailableError(
+                f"Model '{model_name}' has no available deployments. LiteLLM may have cooled "
+                f"the deployment down after an earlier upstream failure; this 429 alone "
+                f"does not establish a provider quota limit. Check 'decepticon logs litellm' "
+                f"for the original error, then verify the model ID, endpoint URL and "
+                f"credentials or configure another method in DECEPTICON_AUTH_PRIORITY.\n"
+                f"Underlying: {safe_msg}"
+            ) from exc
         raise RuntimeError(
             f"Model '{model_name}' hit the provider's rate limit (429). "
             f"Add another method to DECEPTICON_AUTH_PRIORITY so the agent "
