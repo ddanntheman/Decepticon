@@ -23,11 +23,22 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any, LiteralString, cast
 
 from decepticon.skill_audit.assessment_contract import decode_assessment_contract
 
+if TYPE_CHECKING:
+    from neo4j import Query
+
 log = logging.getLogger(__name__)
+
+
+def _runtime_query(cypher: str) -> Query:
+    """Limit server execution time for agent-facing read queries."""
+    from neo4j import Query  # noqa: PLC0415
+
+    return Query(cast(LiteralString, cypher), timeout=5.0)
+
 
 # Write-mode Cypher keywords we refuse to forward, even though the
 # Neo4j driver session is also opened in READ mode. The check is
@@ -244,7 +255,7 @@ class Neo4jBackend:
             "LIMIT 1"
         )
         with self._driver.session(database=self._database, default_access_mode="READ") as session:
-            result = session.run(query, arg=path).single()
+            result = session.run(_runtime_query(query), arg=path).single()
         if result is None:
             return None
         props = dict(result["props"])
@@ -258,7 +269,7 @@ class Neo4jBackend:
         """Return service liveness + a count of :Skill nodes in the graph."""
         query = "MATCH (s:Skill) RETURN count(s) AS skill_count"
         with self._driver.session(database=self._database, default_access_mode="READ") as session:
-            result = session.run(query).single()
+            result = session.run(_runtime_query(query)).single()
         skill_count = 0 if result is None else int(result["skill_count"])
         return {"status": "ok", "skill_count": skill_count}
 
@@ -403,7 +414,9 @@ class Neo4jBackend:
             "LIMIT $cand_n"
         )
         with self._driver.session(database=self._database, default_access_mode="READ") as session:
-            return [dict(record) for record in session.run(cypher, parameters=params)]
+            return [
+                dict(record) for record in session.run(_runtime_query(cypher), parameters=params)
+            ]
 
     def _find_semantic(
         self,
@@ -441,7 +454,9 @@ class Neo4jBackend:
             "LIMIT $cand_n"
         )
         with self._driver.session(database=self._database, default_access_mode="READ") as session:
-            return [dict(record) for record in session.run(cypher, parameters=params)]
+            return [
+                dict(record) for record in session.run(_runtime_query(cypher), parameters=params)
+            ]
 
     @staticmethod
     def _rrf_fuse(
@@ -494,7 +509,7 @@ class Neo4jBackend:
             return [
                 dict(record)
                 for record in session.run(
-                    cypher,
+                    _runtime_query(cypher),
                     parameters={"phase": phase, "limit": int(min(max(limit, 1), 100))},
                 )
             ]
@@ -550,7 +565,7 @@ class Neo4jBackend:
         with self._driver.session(database=self._database, default_access_mode="READ") as session:
             rows: list[dict[str, Any]] = []
             for rec in session.run(
-                cypher,
+                _runtime_query(cypher),
                 parameters={"from_path": from_path, "cap": self._max_rows},
             ):
                 labels = list(rec["labels"])
@@ -589,5 +604,5 @@ class Neo4jBackend:
         """
         assert_read_only(query)
         with self._driver.session(database=self._database, default_access_mode="READ") as session:
-            result = session.run(query, params or {})
+            result = session.run(_runtime_query(query), params or {})
             return [dict(record) for record in result.fetch(self._max_rows)]
