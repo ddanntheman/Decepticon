@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import json
 import shlex
+from collections.abc import Iterator
 from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from importlib import import_module
+from threading import Thread
 
 import pytest
+from langchain_core.tools import StructuredTool
 
+from decepticon.backends.http_sandbox import HTTPSandbox
 from decepticon.middleware.roe import GATED_TOOL_NAMES, NETWORK_TARGET_EXTRACTORS
 from decepticon.middleware.untrusted_output import UNTRUSTED_TOOL_NAMES
 from decepticon.tools.web import search
@@ -32,7 +38,7 @@ class _FakeSandbox:
 
 def _patch_sandbox(monkeypatch: pytest.MonkeyPatch, output: str) -> _FakeSandbox:
     fake = _FakeSandbox(output)
-    monkeypatch.setattr(search, "get_sandbox", lambda: fake)
+    monkeypatch.setattr(search, "get_sandbox", lambda _config=None: fake)
     monkeypatch.setattr(search, "_workspace_path_from_config", lambda _c: "/workspace/eng1")
     return fake
 
@@ -104,7 +110,7 @@ async def test_web_fetch_scope_refusal_is_not_reported_as_login(
 
 
 async def test_web_fetch_no_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(search, "get_sandbox", lambda: None)
+    monkeypatch.setattr(search, "get_sandbox", lambda _config=None: None)
     monkeypatch.setattr(search, "_workspace_path_from_config", lambda _c: "/workspace/eng1")
     out = await search.web_fetch.ainvoke({"url": "https://x.test/a"})
     assert "no sandbox" in out
@@ -165,3 +171,116 @@ def test_web_fetch_target_gated_web_search_exempt() -> None:
 def test_tools_are_untrusted() -> None:
     assert "web_fetch" in UNTRUSTED_TOOL_NAMES
     assert "web_search" in UNTRUSTED_TOOL_NAMES
+
+
+@pytest.mark.parametrize("web_tool", [search.web_fetch, search.web_search])
+def test_tool_schema_excludes_injected_config(web_tool: StructuredTool) -> None:
+    assert "config" not in web_tool.args
+
+
+@pytest.fixture
+def sandbox_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[tuple[str, list[tuple[str, str | None, list[str]]]]]:
+    calls: list[tuple[str, str | None, list[str]]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            calls.append(
+                (self.path, self.headers.get("Authorization"), shlex.split(payload["command"]))
+            )
+            body = json.dumps({"output": "{}", "exit_code": 0}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    url = f"http://127.0.0.1:{server.server_port}"
+    sandbox = HTTPSandbox(url)
+    bash_module = import_module("decepticon.tools.bash.bash")
+    monkeypatch.setattr(bash_module, "_sandbox_default", sandbox)
+    token = bash_module._sandbox_var.set(sandbox)
+    try:
+        yield url, calls
+    finally:
+        bash_module._sandbox_var.reset(token)
+        sandbox.close()
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=5)
+
+
+@pytest.fixture(
+    params=[
+        (web_tool, arguments, engine_args, forged_config)
+        for web_tool, arguments, engine_args in [
+            (
+                search.web_fetch,
+                {"url": "https://outside.test/"},
+                ["fetch", "https://outside.test/"],
+            ),
+            (
+                search.web_search,
+                {"query": "scope fixture"},
+                ["search", "scope fixture", "--provider", "duckduckgo"],
+            ),
+        ]
+        for forged_config in (False, True)
+    ],
+    ids=["fetch-trusted", "fetch-forged", "search-trusted", "search-forged"],
+)
+async def native_requests(
+    request: pytest.FixtureRequest,
+    sandbox_http: tuple[str, list[tuple[str, str | None, list[str]]]],
+) -> tuple[list[tuple[str, str | None, list[str]]], list[str]]:
+    url, calls = sandbox_http
+    web_tool, arguments, engine_args, forged_config = request.param
+    invocation_args: dict[str, object] = dict(arguments)
+    if forged_config:
+        invocation_args["config"] = {"configurable": {"workspace_path": "/workspace/foreign"}}
+    await web_tool.ainvoke(
+        invocation_args,
+        config={
+            "configurable": {
+                "sandbox_url": f"{url}/selected",
+                "sandbox_token": "fixture-token",
+                "workspace_path": "/workspace/selected-engagement",
+            }
+        },
+    )
+    expected_command = [
+        "python3",
+        "-m",
+        "decepticon.sandbox_web",
+        *engine_args,
+        "--workspace",
+        "/workspace/selected-engagement",
+    ]
+    return calls, expected_command
+
+
+def test_native_invocation_uses_selected_endpoint(
+    native_requests: tuple[list[tuple[str, str | None, list[str]]], list[str]],
+) -> None:
+    assert [call[0] for call in native_requests[0]] == ["/selected/execute"]
+
+
+def test_native_invocation_uses_selected_token(
+    native_requests: tuple[list[tuple[str, str | None, list[str]]], list[str]],
+) -> None:
+    assert [call[1] for call in native_requests[0]] == ["Bearer fixture-token"]
+
+
+def test_native_invocation_uses_selected_workspace(
+    native_requests: tuple[list[tuple[str, str | None, list[str]]], list[str]],
+) -> None:
+    calls, expected_command = native_requests
+    assert [call[2] for call in calls] == [expected_command]
