@@ -1553,7 +1553,9 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
         ) from exc
 
     if "ratelimit" in err_type.lower() or "code: 429" in msg_lower:
-        if "no deployments available" in msg_lower or "cooldown" in msg_lower:
+        # Only the router's own RouterRateLimitError wording counts; providers also
+        # say "cooldown" when describing a genuine quota limit.
+        if "no deployments available" in msg_lower or "cooldown_list=" in msg_lower:
             raise _LiteLLMDeploymentUnavailableError(
                 f"Model '{model_name}' has no available deployments. LiteLLM may have cooled "
                 f"the deployment down after an earlier upstream failure; this 429 alone "
