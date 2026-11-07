@@ -15,10 +15,12 @@ red-team run never blocks the calling agent's tool call.
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Sequence
 from typing import Any
 
 from decepticon.mcp_server.config import ServerConfig
+from decepticon.mcp_server.findings import engagement_workspace
 from decepticon.mcp_server.models import (
     EngagementSummary,
     GraphInfo,
@@ -137,7 +139,18 @@ class EngagementClient:
         }
 
         client = self._ensure_client()
-        thread = await client.threads.create()
+        if os.environ.get("DECEPTICON_ENGAGEMENT"):
+            workspace = os.environ.get("DECEPTICON_WORKSPACE_PATH", "/workspace")
+            run_config["configurable"]["workspace_path"] = workspace
+            thread = await client.threads.create(
+                metadata={
+                    "engagement_name": engagement_name,
+                    "workspace_identity": str(engagement_workspace(engagement_name)),
+                    "workspace_path": workspace,
+                }
+            )
+        else:
+            thread = await client.threads.create()
         thread_id = str(thread["thread_id"])
         run = await client.runs.create(
             thread_id,

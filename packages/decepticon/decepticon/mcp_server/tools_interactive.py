@@ -20,7 +20,7 @@ from decepticon.mcp_server.models import (
     Transcript,
     WatchResult,
 )
-from decepticon.mcp_server.tools_lifecycle import _selected_thread_state
+from decepticon.mcp_server.tools_lifecycle import _selected_thread_state, _ThreadAccessError
 
 _ACTIVE = ("pending", "running")
 
@@ -53,13 +53,13 @@ def register_interactive_tools(mcp: FastMCP, engagements: EngagementClient) -> N
             return rows
         visible: list[EngagementSummary] = []
         for row in rows:
-            if row.engagement_name != selected:
+            if row.engagement_name not in (None, selected):
                 continue
             try:
                 await _selected_thread_state(engagements, row.thread_id)
-            except ValueError:
+            except _ThreadAccessError:
                 continue
-            visible.append(row)
+            visible.append(row.model_copy(update={"engagement_name": selected}))
             if len(visible) == bounded:
                 break
         return visible

@@ -313,9 +313,10 @@ func runStart(cmd *cobra.Command, args []string) error {
 	ui.Info("Launching Decepticon CLI...")
 
 	cliEnv := map[string]string{
-		"DECEPTICON_VERSION":      version,
-		"DECEPTICON_ASSISTANT_ID": choice.AssistantID,
-		"DECEPTICON_ENGAGEMENT":   choice.Engagement,
+		"DECEPTICON_VERSION":              version,
+		"DECEPTICON_ASSISTANT_ID":         choice.AssistantID,
+		"DECEPTICON_ENGAGEMENT":           choice.Engagement,
+		"DECEPTICON_ENGAGEMENT_WORKSPACE": choice.WorkspacePath,
 	}
 	if port := config.Get(env, "WEB_PORT", "3000"); port != "" {
 		cliEnv["WEB_PORT"] = port
