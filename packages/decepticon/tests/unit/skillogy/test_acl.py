@@ -230,3 +230,66 @@ def test_tool_output_shape_still_json(tool_name):
     else:
         result = tools[tool_name].invoke({"from_path": "/skills/standard/recon/demo/SKILL.md"})
     json.loads(result)  # raises if the closure broke the JSON envelope
+
+
+def test_resolver_raises_when_plugin_lookup_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unavailable(_role: str) -> list[str]:
+        raise RuntimeError("plugin registry unavailable")
+
+    monkeypatch.setattr("decepticon.agents.middleware_slots.load_plugin_skill_sources", unavailable)
+    with pytest.raises(RuntimeError, match="scope resolution failed"):
+        _resolve_allowed_path_prefixes(role="recon", skill_sources=None)
+
+
+def test_resolver_missing_registry_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+
+    monkeypatch.setitem(sys.modules, "decepticon.agents.middleware_slots", None)
+    with pytest.raises(RuntimeError, match="scope resolver unavailable"):
+        _resolve_allowed_path_prefixes(role="recon", skill_sources=None)
+
+
+@pytest.mark.parametrize(
+    "sources",
+    [
+        [],
+        ["/skills/"],
+        ["/skills/shared"],
+        ["/skills/shared/", "../outside/"],
+        ["/skills/recon/../exploit/"],
+        [""],
+        [123],
+    ],
+)
+def test_resolver_rejects_invalid_scope(sources: list[str]) -> None:
+    with pytest.raises(RuntimeError, match="nonempty restricted scope"):
+        _resolve_allowed_path_prefixes(role="recon", skill_sources=sources)
+
+
+def test_direct_middleware_rejects_empty_scope() -> None:
+    with pytest.raises(RuntimeError, match="nonempty restricted scope"):
+        SkillogyMiddleware(backend=_RecordingBackend(), allowed_path_prefixes=[])
+
+
+def test_scope_failures_use_a_domain_exception() -> None:
+    with pytest.raises(RuntimeError) as error:
+        _resolve_allowed_path_prefixes(role="recon", skill_sources=[])
+    assert type(error.value).__name__ == "_SkillogyScopeError"
+
+
+def test_role_scope_failure_never_installs_unrestricted_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DECEPTICON_USE_SKILLOGY", "1")
+    monkeypatch.setenv("DECEPTICON_SKILLOGY_URL", "http://127.0.0.1:1")
+    monkeypatch.setattr(
+        "decepticon.agents.middleware_slots.load_plugin_skill_sources", lambda _role: ["/skills/"]
+    )
+    with pytest.raises(RuntimeError, match="nonempty restricted scope"):
+        maybe_install_skillogy([_StubSkillsMiddleware()], role="recon")
+
+
+def test_empty_scope_is_irrelevant_without_a_skill_slot(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DECEPTICON_USE_SKILLOGY", "1")
+    stack = [object()]
+    assert maybe_install_skillogy(stack, role="recon", skill_sources=[]) is stack
