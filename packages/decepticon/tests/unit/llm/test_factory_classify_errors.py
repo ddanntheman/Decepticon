@@ -280,7 +280,6 @@ class TestUnclassifiedErrorSecretNet:
     "details",
     [
         "No deployments available for selected model",
-        "Deployment in cooldown; retry in 60 seconds",
         "No deployments available; cooldown_list=['deployment-fixture']",
     ],
 )
@@ -295,7 +294,6 @@ def test_router_cooldown_identifies_unavailable_deployment(details: str) -> None
     "details",
     [
         "No deployments available for selected model",
-        "Deployment in cooldown; retry in 60 seconds",
         "No deployments available; cooldown_list=['deployment-fixture']",
     ],
 )
@@ -306,11 +304,11 @@ def test_router_cooldown_does_not_claim_provider_quota(details: str) -> None:
     assert "hit the provider's rate limit (429)" not in str(error.value)
 
 
-def test_router_cooldown_uses_a_named_domain_exception() -> None:
-    exc = _exc_with_status("RouterRateLimitError", 429, "Error code: 429 - cooldown")
+def test_provider_cooldown_keeps_quota_exception_type() -> None:
+    exc = _exc_with_status("RateLimitError", 429, "Error code: 429 - cooldown")
     with pytest.raises(RuntimeError) as error:
         _reraise_with_actionable_message(exc, "custom/fixture-model")
-    assert type(error.value).__name__ == "_LiteLLMDeploymentUnavailableError"
+    assert type(error.value) is RuntimeError
 
 
 @pytest.mark.parametrize("marker", ["cooldown", "proxy", "invalid_api_key"])
@@ -342,3 +340,18 @@ def test_credential_status_cannot_invent_a_bad_request() -> None:
     with pytest.raises(RuntimeError) as error:
         _reraise_with_actionable_message(exc, "custom/fixture-model")
     assert "rejected the request (400)" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        "Provider quota exceeded; cooldown=60 seconds",
+        "Deployment in cooldown; retry in 60 seconds",
+        "Quota exceeded for deployment azure/fixture; cooldown=60 seconds",
+    ],
+)
+def test_provider_cooldown_keeps_quota_diagnostic(details: str) -> None:
+    exc = _exc_with_status("RateLimitError", 429, f"Error code: 429 - {details}")
+    with pytest.raises(RuntimeError) as error:
+        _reraise_with_actionable_message(exc, "custom/fixture-model")
+    assert "hit the provider's rate limit (429)" in str(error.value)
