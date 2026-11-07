@@ -29,18 +29,32 @@ def default_engagement_name() -> str:
     return "mcp-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
 
 
+class _ThreadAccessError(ValueError):
+    """A thread is not bound to the selected engagement workspace."""
+
+
 async def _selected_thread_state(engagements: EngagementClient, thread_id: str) -> dict[str, Any]:
+    selected = os.environ.get("DECEPTICON_ENGAGEMENT", "")
+    workspace = os.environ.get("DECEPTICON_WORKSPACE_PATH", "/workspace")
+    if selected:
+        thread = await engagements._ensure_client().threads.get(thread_id)
+        metadata = thread.get("metadata") if isinstance(thread, dict) else None
+        if not isinstance(metadata, dict) or (
+            metadata.get("engagement_name") != selected
+            or metadata.get("workspace_identity") != str(engagement_workspace(selected))
+            or metadata.get("workspace_path") != workspace
+        ):
+            raise _ThreadAccessError("thread does not belong to the selected engagement workspace")
     state = await engagements.get_state(thread_id)
     if not isinstance(state, dict):
-        raise ValueError("invalid engagement thread state")
-    selected = os.environ.get("DECEPTICON_ENGAGEMENT", "")
+        raise _ThreadAccessError("invalid engagement thread state")
     if selected:
         values = state.get("values")
         if not isinstance(values, dict) or (
-            values.get("engagement_name") != selected
-            or values.get("workspace_path") != str(engagement_workspace(selected))
+            values.get("engagement_name") not in (None, selected)
+            or values.get("workspace_path") not in (None, workspace)
         ):
-            raise ValueError("thread does not belong to the selected engagement workspace")
+            raise _ThreadAccessError("thread does not belong to the selected engagement workspace")
     return state
 
 
@@ -79,7 +93,10 @@ def register_lifecycle_tools(
         ``decepticon_send_message`` to steer, ``decepticon_engagement_findings``
         to pull results.
         """
-        name = engagement_name or default_engagement_name()
+        selected = os.environ.get("DECEPTICON_ENGAGEMENT", "")
+        name = engagement_name or selected or default_engagement_name()
+        if selected and name != selected:
+            raise _ThreadAccessError("cannot start outside the selected engagement workspace")
         if not is_valid_engagement_label(name):
             raise ValueError(
                 f"invalid engagement_name {name!r}; must match "

@@ -727,7 +727,13 @@ export function useAgent({
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
             if (abortController.signal.aborted) return;
             try {
-              const thread = await client.threads.create();
+              const thread = await client.threads.create({
+                metadata: {
+                  engagement_name: process.env.DECEPTICON_ENGAGEMENT,
+                  workspace_identity: process.env.DECEPTICON_ENGAGEMENT_WORKSPACE,
+                  workspace_path: process.env.DECEPTICON_WORKSPACE_PATH ?? "/workspace",
+                },
+              });
               threadIdRef.current = thread.thread_id;
               await saveThread(thread.thread_id, assistantIdRef.current, message);
               break;
