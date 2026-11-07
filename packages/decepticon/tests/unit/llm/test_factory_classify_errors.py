@@ -274,3 +274,40 @@ class TestUnclassifiedErrorSecretNet:
         exc = ValueError("planner produced no model for anthropic/claude-opus-4-7-experimental")
         # Returns None (no raise).
         assert _reraise_with_actionable_message(exc, "anthropic/claude-opus-4-7") is None
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        "No deployments available for selected model",
+        "Deployment in cooldown; retry in 60 seconds",
+        "No deployments available; cooldown_list=['deployment-fixture']",
+    ],
+)
+def test_router_cooldown_identifies_unavailable_deployment(details: str) -> None:
+    exc = _exc_with_status("RouterRateLimitError", 429, f"Error code: 429 - {details}")
+    with pytest.raises(RuntimeError) as error:
+        _reraise_with_actionable_message(exc, "custom/fixture-model")
+    assert "no available deployments" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        "No deployments available for selected model",
+        "Deployment in cooldown; retry in 60 seconds",
+        "No deployments available; cooldown_list=['deployment-fixture']",
+    ],
+)
+def test_router_cooldown_does_not_claim_provider_quota(details: str) -> None:
+    exc = _exc_with_status("RouterRateLimitError", 429, f"Error code: 429 - {details}")
+    with pytest.raises(RuntimeError) as error:
+        _reraise_with_actionable_message(exc, "custom/fixture-model")
+    assert "hit the provider's rate limit (429)" not in str(error.value)
+
+
+def test_router_cooldown_uses_a_named_domain_exception() -> None:
+    exc = _exc_with_status("RouterRateLimitError", 429, "Error code: 429 - cooldown")
+    with pytest.raises(RuntimeError) as error:
+        _reraise_with_actionable_message(exc, "custom/fixture-model")
+    assert type(error.value).__name__ == "_LiteLLMDeploymentUnavailableError"
