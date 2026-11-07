@@ -311,3 +311,15 @@ def test_router_cooldown_uses_a_named_domain_exception() -> None:
     with pytest.raises(RuntimeError) as error:
         _reraise_with_actionable_message(exc, "custom/fixture-model")
     assert type(error.value).__name__ == "_LiteLLMDeploymentUnavailableError"
+
+
+@pytest.mark.parametrize("marker", ["cooldown", "proxy", "invalid_api_key"])
+def test_echoed_credential_cannot_relabel_provider_quota(marker: str) -> None:
+    exc = _exc_with_status(
+        "RateLimitError",
+        429,
+        f"Error code: 429 - quota exceeded. Authorization: Bearer FIXTURE_{marker}_SENTINEL",
+    )
+    with pytest.raises(RuntimeError) as error:
+        _reraise_with_actionable_message(exc, "custom/fixture-model")
+    assert "hit the provider's rate limit (429)" in str(error.value)
