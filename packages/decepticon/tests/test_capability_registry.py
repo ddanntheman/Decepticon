@@ -18,6 +18,8 @@ import dataclasses
 import re
 from pathlib import Path
 
+import pytest
+
 from decepticon.runtime.programs import KNOWN_PROGRAMS
 from decepticon_core.capabilities import (
     Capability,
@@ -306,3 +308,11 @@ def test_capability_pip_packages_is_last_field() -> None:
         "apt_packages",
         "risk_tier",
     ], f"positional field order changed: {field_names}"
+
+
+@pytest.mark.parametrize("package", ["volatility3", "fastapi", "curl_cffi"])
+def test_sandbox_pip_preserves_distro_owned_packages(package: str) -> None:
+    dockerfile = _SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+    commands = re.findall(r"^RUN pip3 install[^\n]+", dockerfile.replace("\\\n", " "), re.MULTILINE)
+    install = next(command for command in commands if f'"{package}>=' in command)
+    assert "--ignore-installed" in install.split()

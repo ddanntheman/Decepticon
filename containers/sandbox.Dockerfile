@@ -146,8 +146,9 @@ RUN echo "set-option -g history-limit 20000" > /root/.tmux.conf
 # rather than left for the agent to install at runtime. Kept in lockstep
 # with the registry's base ``pip_packages`` by a drift test
 # (tests/test_capability_registry.py). --break-system-packages: Kali's
-# Python is externally managed (PEP 668).
-RUN pip3 install --break-system-packages --no-cache-dir \
+# Python is externally managed (PEP 668). Pip's /usr/local overlays must
+# not uninstall apt-owned distributions without RECORD metadata.
+RUN pip3 install --break-system-packages --no-cache-dir --ignore-installed \
     "volatility3>=2.5.0"
 
 # Optional HTTP sandbox daemon — see decepticon/sandbox_server/.
@@ -164,7 +165,7 @@ RUN pip3 install --break-system-packages --no-cache-dir \
 # heavier decepticon agent / LLM / langgraph SDKs are deliberately
 # left out so the sandbox image doesn't bloat for the >95% of users
 # who never enable the daemon.
-RUN pip3 install --break-system-packages --no-cache-dir \
+RUN pip3 install --break-system-packages --no-cache-dir --ignore-installed \
     "fastapi>=0.115.0" \
     "uvicorn>=0.30.0" \
     "deepagents>=0.5.0"
@@ -181,7 +182,7 @@ RUN pip3 install --break-system-packages --no-cache-dir \
 #   * yt-dlp       — Phase 0 media route (YouTube/Vimeo/… --dump-json)
 #   * pydantic*    — decepticon-core dep so the per-hop RoE scope_check
 #                    (evaluate_target on <workspace>/plan/roe.json) is live.
-RUN pip3 install --break-system-packages --no-cache-dir \
+RUN pip3 install --break-system-packages --no-cache-dir --ignore-installed \
     "curl_cffi>=0.15.0" \
     "beautifulsoup4>=4.12.0" \
     "pyyaml>=6.0.0" \
@@ -292,8 +293,8 @@ ENV PYTHONPATH=/opt
 # a global install + NODE_PATH does not. The executor shells `node` here, so node
 # resolves require() from templates/node_modules. Done after the COPY because the
 # templates' package.json ships inside sandbox_web.
-RUN cd /opt/decepticon/sandbox_web/templates \
-    && npm install --no-fund --no-audit --omit=optional \
+WORKDIR /opt/decepticon/sandbox_web/templates
+RUN npm install --no-fund --no-audit --omit=optional \
     && npm cache clean --force
 
 # Skip the framework boot path on this image — the sandbox container
@@ -329,7 +330,7 @@ ENTRYPOINT ["/entrypoint.sh"]
 
 # Healthcheck: verify the sandbox is alive and tmux is usable.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD tmux -V >/dev/null 2>&1 || exit 1
+    CMD ["tmux", "-V"]
 
 # Keep the container alive so the backend can 'docker exec' into it
 CMD ["tail", "-f", "/dev/null"]
