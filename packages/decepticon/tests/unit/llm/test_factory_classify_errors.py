@@ -323,3 +323,22 @@ def test_echoed_credential_cannot_relabel_provider_quota(marker: str) -> None:
     with pytest.raises(RuntimeError) as error:
         _reraise_with_actionable_message(exc, "custom/fixture-model")
     assert "hit the provider's rate limit (429)" in str(error.value)
+
+
+def test_credential_status_cannot_make_unknown_error_fatal() -> None:
+    exc = Exception("provider failed. Authorization: Bearer FIXTURE_http400_SENTINEL")
+    assert _classify_provider_error(exc) == "retryable"
+
+
+def test_credential_status_cannot_add_a_fatal_diagnostic() -> None:
+    exc = Exception("provider failed. Authorization: Bearer FIXTURE_http400_SENTINEL")
+    with pytest.raises(RuntimeError) as error:
+        _reraise_with_actionable_message(exc, "custom/fixture-model")
+    assert "non-retryable provider error" not in str(error.value)
+
+
+def test_credential_status_cannot_invent_a_bad_request() -> None:
+    exc = Exception("provider failed. Authorization: Bearer FIXTURE_http400_SENTINEL")
+    with pytest.raises(RuntimeError) as error:
+        _reraise_with_actionable_message(exc, "custom/fixture-model")
+    assert "rejected the request (400)" not in str(error.value)
